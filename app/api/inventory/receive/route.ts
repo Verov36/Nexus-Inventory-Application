@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
+  const userId = session.user.id;
 
   const body = await req.json();
   const parsed = receiveSchema.safeParse(body);
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
         quantity,
         toLocationType: "WAREHOUSE",
         toWarehouseId: warehouseId,
-        performedById: session.user.id,
+        performedById: userId,
       },
     });
 

@@ -34,7 +34,7 @@ const checkoutSchema = z
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (userId) const userId = session.user.id; {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
         fromWarehouseId: warehouseId,
         toLocationType: "TRUCK",
         toTruckId: truckId,
-        performedById: session.user!.id!,
+        performedById: userId,
       },
     });
 
