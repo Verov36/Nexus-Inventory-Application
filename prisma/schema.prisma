@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MANAGER
+  WAREHOUSE_STAFF
+  TECH
+}
+
+enum TransactionType {
+  RECEIVE          // part comes into warehouse
+  CHECKOUT         // part leaves warehouse or truck to a person
+  RETURN           // part comes back (unused / job overage)
+  TRANSFER         // moves between two locations (e.g. truck to truck)
+  ADJUSTMENT        // manager correction / cycle count
+}
+
+enum CheckoutType {
+  JOB_USE   // tied to a specific job / work order
+  RESTOCK   // general truck replenishment, no job required
+}
+
+enum LocationType {
+  WAREHOUSE
+  TRUCK
+}
+
+enum JustificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  truck        Truck?   @relation("TruckTech")
+  createdAt    DateTime @default(now())
+
+  transactions       InventoryTransaction[] @relation("PerformedBy")
+  justifications      OverageJustification[] @relation("SubmittedBy")
+  reviewedJustifications OverageJustification[] @relation("ReviewedBy")
+}
+
+model Part {
+  id             String   @id @default(cuid())
+  sku            String   @unique
+  name           String
+  description    String?
+  category       String?
+  unitCost       Decimal? @db.Decimal(10, 2)
+  barcodeValue   String   @unique // value encoded in the QR/barcode label
+  reorderThreshold Int    @default(0)
+  createdAt      DateTime @default(now())
+
+  stockLevels    StockLevel[]
+  truckLimits    TruckStockLimit[]
+  transactions   InventoryTransaction[]
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  stockLevels StockLevel[]
+}
+
+model Truck {
+  id         String   @id @default(cuid())
+  label      String   // e.g. "Truck 4" / license plate
+  techId     String?  @unique
+  tech       User?    @relation("TruckTech", fields: [techId], references: [id])
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  stockLevels StockLevel[]
+  stockLimits TruckStockLimit[]
+}
+
+// Current on-hand quantity for a part at a given location (warehouse or truck)
+model StockLevel {
+  id          String     @id @default(cuid())
+  partId      String
+  part        Part       @relation(fields: [partId], references: [id])
+  locationType LocationType
+  warehouseId String?
+  warehouse   Warehouse? @relation(fields: [warehouseId], references: [id])
+  truckId     String?
+  truck       Truck?     @relation(fields: [truckId], references: [id])
+  quantity    Int        @default(0)
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([partId, warehouseId, truckId])
+}
+
+// Manager-defined cap for how much of a part (or category) may sit on a given truck
+model TruckStockLimit {
+  id        String   @id @default(cuid())
+  truckId   String
+  truck     Truck    @relation(fields: [truckId], references: [id])
+  partId    String?  // null + category set = category-level cap
+  part      Part?    @relation(fields: [partId], references: [id])
+  category  String?
+  maxQty    Int
+  setById   String
+  createdAt DateTime @default(now())
+
+  @@unique([truckId, partId, category])
+}
+
+model Job {
+  id        String   @id @default(cuid())
+  jobNumber String   @unique
+  customer  String?
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+
+  usages PartUsage[]
+}
+
+// Every movement of parts is recorded here — the immutable audit trail
+model InventoryTransaction {
+  id              String           @id @default(cuid())
+  type            TransactionType
+  checkoutType    CheckoutType?    // set only when type = CHECKOUT
+  partId          String
+  part            Part             @relation(fields: [partId], references: [id])
+  quantity        Int
+  fromLocationType LocationType?
+  fromWarehouseId String?
+  fromTruckId     String?
+  toLocationType  LocationType?
+  toWarehouseId   String?
+  toTruckId       String?
+  performedById   String
+  performedBy     User             @relation("PerformedBy", fields: [performedById], references: [id])
+  createdAt       DateTime         @default(now())
+
+  partUsage       PartUsage?
+  justification   OverageJustification?
+}
+
+// Links a JOB_USE checkout transaction to the job it was consumed on
+model PartUsage {
+  id            String                @id @default(cuid())
+  transactionId String                @unique
+  transaction   InventoryTransaction  @relation(fields: [transactionId], references: [id])
+  jobId         String
+  job           Job                   @relation(fields: [jobId], references: [id])
+  notes         String?
+}
+
+// Required before a JOB_USE checkout is allowed to proceed when it would
+// push (or keep) the truck over its manager-set stock limit
+model OverageJustification {
+  id            String               @id @default(cuid())
+  transactionId String?              @unique
+  transaction   InventoryTransaction? @relation(fields: [transactionId], references: [id])
+  truckId       String
+  submittedById String
+  submittedBy   User                 @relation("SubmittedBy", fields: [submittedById], references: [id])
+  explanation   String
+  relatedJobNumbers String[]
+  status        JustificationStatus  @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?                @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  createdAt     DateTime             @default(now())
+  reviewedAt    DateTime?
+}
