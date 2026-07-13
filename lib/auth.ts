@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true, // required behind Railway's reverse proxy, or NextAuth throws a generic "server configuration" error
   session: { strategy: "jwt" },
   providers: [
     Credentials({
