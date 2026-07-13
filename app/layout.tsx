@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import Providers from "./providers";
+import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "Nexus Parts Inventory",
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           running on whichever machine has the Zebra printer attached.
         */}
         <Script src="/browserprint/BrowserPrint-3.1.min.js" strategy="beforeInteractive" />
-        <Providers>{children}</Providers>
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );

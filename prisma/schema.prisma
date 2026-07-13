@@ -8,9 +8,12 @@ datasource db {
 }
 
 enum Role {
-  MANAGER
-  WAREHOUSE_STAFF
-  TECH
+  SUPER_ADMIN       // Chris — full system control, only one who can mass-import
+  ADMIN             // manages users and permissions
+  MANAGER           // sets truck caps, reviews overage justifications, runs reports
+  WAREHOUSE_MANAGER // oversees warehouse operations and staff
+  WAREHOUSE_EMPLOYEE // receives and checks in parts
+  TRUCK_TECH        // checks parts out to a truck, submits justifications
 }
 
 enum TransactionType {
@@ -178,4 +181,25 @@ model OverageJustification {
   reviewedBy    User?                @relation("ReviewedBy", fields: [reviewedById], references: [id])
   createdAt     DateTime             @default(now())
   reviewedAt    DateTime?
+}
+
+// A single adjustable schedule for automated usage reports — frequency can be
+// changed once inventory settles into a manageable rhythm.
+model ReportSchedule {
+  id            String   @id @default(cuid())
+  frequencyDays Int      @default(7)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime @default(now())
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+}
+
+// Stored result of each automated report run, so managers can browse history
+// without re-querying transactions each time.
+model ReportSnapshot {
+  id          String   @id @default(cuid())
+  rangeFrom   DateTime
+  rangeTo     DateTime
+  summaryJson String   @db.Text
+  generatedAt DateTime @default(now())
 }

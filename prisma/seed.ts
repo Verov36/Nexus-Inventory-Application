@@ -11,19 +11,25 @@ async function main() {
   });
 
   const passwordHash = await bcrypt.hash("changeme123", 10);
-  const manager = await prisma.user.upsert({
-    where: { email: "manager@example.com" },
+  const superAdmin = await prisma.user.upsert({
+    where: { email: "chris@example.com" },
     update: {},
     create: {
-      name: "Demo Manager",
-      email: "manager@example.com",
+      name: "Chris",
+      email: "chris@example.com",
       passwordHash,
-      role: "MANAGER",
+      role: "SUPER_ADMIN",
     },
   });
 
+  await prisma.reportSchedule.upsert({
+    where: { id: "default-schedule" },
+    update: {},
+    create: { id: "default-schedule", frequencyDays: 7 },
+  });
+
   console.log("Seeded warehouse:", warehouse.id);
-  console.log("Seeded manager login: manager@example.com / changeme123 (user id " + manager.id + ")");
+  console.log("Seeded super admin login: chris@example.com / changeme123 (user id " + superAdmin.id + ")");
   console.log("Set NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID=" + warehouse.id + " in .env.local");
 }
 

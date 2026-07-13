@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Summary = {
   range: { from: string; to: string };
@@ -13,6 +13,9 @@ type Summary = {
   byJob: { jobNumber: string; parts: { part: string; quantity: number }[] }[];
 };
 
+type Schedule = { id: string; frequencyDays: number; lastRunAt: string | null; nextRunAt: string };
+type Snapshot = { id: string; rangeFrom: string; rangeTo: string; generatedAt: string; summary: Summary };
+
 function defaultRange() {
   const to = new Date();
   const from = new Date();
@@ -24,6 +27,35 @@ export default function ReportsPage() {
   const [range, setRange] = useState(defaultRange());
   const [summary, setSummary] = useState<Summary | null>(null);
   const [busy, setBusy] = useState(false);
+  const [schedule, setSchedule] = useState<Schedule | null>(null);
+  const [frequencyInput, setFrequencyInput] = useState("7");
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+
+  useEffect(() => {
+    fetch("/api/report-schedule")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.schedule) {
+          setSchedule(d.schedule);
+          setFrequencyInput(String(d.schedule.frequencyDays));
+        }
+      });
+    fetch("/api/reports/snapshots")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSnapshots(d?.snapshots ?? []));
+  }, []);
+
+  async function saveFrequency() {
+    const res = await fetch("/api/report-schedule", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ frequencyDays: Number(frequencyInput) }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setSchedule(data.schedule);
+    }
+  }
 
   async function runReport() {
     setBusy(true);
@@ -40,6 +72,65 @@ export default function ReportsPage() {
   return (
     <main className="mx-auto min-h-screen max-w-2xl bg-nexus-paper px-4 pb-24 pt-8">
       <h1 className="text-2xl font-medium text-nexus-navy">Parts usage report</h1>
+
+      <section className="mt-4 rounded-xl border-2 border-nexus-steel/15 bg-white p-4">
+        <p className="font-medium text-nexus-navy">Audit report schedule</p>
+        <p className="mt-1 text-sm text-nexus-steel">
+          Runs automatically on this cadence and saves a snapshot below. Loosen it up once inventory
+          settles into a manageable rhythm.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-nexus-steel">Every</span>
+          <input
+            type="number"
+            min={1}
+            max={90}
+            value={frequencyInput}
+            onChange={(e) => setFrequencyInput(e.target.value)}
+            className="tap-target w-20 rounded-lg border-2 border-nexus-steel/30 px-3"
+          />
+          <span className="text-sm text-nexus-steel">days</span>
+          <button
+            onClick={saveFrequency}
+            className="tap-target rounded-lg border-2 border-nexus-navy px-4 text-sm font-medium text-nexus-navy"
+          >
+            Save
+          </button>
+          {schedule?.nextRunAt && (
+            <span className="text-xs text-nexus-steel">
+              Next run: {new Date(schedule.nextRunAt).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+      </section>
+
+      {snapshots.length > 0 && (
+        <section className="mt-4 rounded-xl border-2 border-nexus-steel/15 bg-white p-4">
+          <p className="font-medium text-nexus-navy">Past automated reports</p>
+          <ul className="mt-2 divide-y divide-nexus-steel/10 text-sm">
+            {snapshots.map((s) => (
+              <li key={s.id} className="flex items-center justify-between py-2">
+                <span>
+                  {new Date(s.rangeFrom).toLocaleDateString()} – {new Date(s.rangeTo).toLocaleDateString()}
+                </span>
+                <button
+                  onClick={() => {
+                    setSummary(s.summary);
+                    setRange({
+                      from: s.rangeFrom.slice(0, 10),
+                      to: s.rangeTo.slice(0, 10),
+                    });
+                  }}
+                  className="text-nexus-navy underline"
+                >
+                  View
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <div>
