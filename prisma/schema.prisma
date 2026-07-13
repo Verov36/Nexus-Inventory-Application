@@ -85,6 +85,7 @@ model Truck {
 
   stockLevels StockLevel[]
   stockLimits TruckStockLimit[]
+  justifications OverageJustification[]
 }
 
 // Current on-hand quantity for a part at a given location (warehouse or truck)
@@ -167,6 +168,7 @@ model OverageJustification {
   transactionId String?              @unique
   transaction   InventoryTransaction? @relation(fields: [transactionId], references: [id])
   truckId       String
+  truck         Truck                @relation(fields: [truckId], references: [id])
   submittedById String
   submittedBy   User                 @relation("SubmittedBy", fields: [submittedById], references: [id])
   explanation   String
