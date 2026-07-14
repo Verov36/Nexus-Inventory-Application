@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
+import { canReceiveWarehouseStock } from "@/lib/roles";
 
 const receiveSchema = z.object({
   partId: z.string().min(1),
@@ -19,6 +20,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
   const userId = session.user.id;
+
+  // Checked fresh against the database (not the JWT session) so a
+  // permission change an admin makes in /admin/users takes effect
+  // immediately rather than waiting for the affected user's session to
+  // refresh on next login.
+  const actingUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, canReceiveParts: true },
+  });
+  if (!actingUser || !canReceiveWarehouseStock(actingUser.role, actingUser.canReceiveParts)) {
+    return NextResponse.json(
+      { error: "You're not currently designated to receive warehouse parts. Ask a manager to enable it for your account." },
+      { status: 403 }
+    );
+  }
 
   const body = await req.json();
   const parsed = receiveSchema.safeParse(body);

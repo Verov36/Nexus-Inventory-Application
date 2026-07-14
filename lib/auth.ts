@@ -23,19 +23,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
 
-        return { id: user.id, name: user.name, email: user.email, role: user.role };
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          canReceiveParts: user.canReceiveParts,
+        };
       },
     }),
   ],
   callbacks: {
     jwt({ token, user }) {
-      if (user) token.role = (user as { role: string }).role;
+      if (user) {
+        token.role = (user as { role: string }).role;
+        token.canReceiveParts = (user as { canReceiveParts: boolean }).canReceiveParts;
+      }
       return token;
     },
     session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub as string;
         (session.user as { role?: string }).role = token.role as string;
+        (session.user as { canReceiveParts?: boolean }).canReceiveParts = token.canReceiveParts as boolean;
       }
       return session;
     },

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { auth } from "@/lib/auth";
+import { canReceiveWarehouseStock } from "@/lib/roles";
 
 // GET /api/parts?barcode=XYZ  -> find one part by its label value
 export async function GET(req: NextRequest) {
@@ -24,6 +26,21 @@ const createPartSchema = z.object({
 
 // POST /api/parts -> create a new part when a scanned barcode has no match yet
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  const actingUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true, canReceiveParts: true },
+  });
+  if (!actingUser || !canReceiveWarehouseStock(actingUser.role, actingUser.canReceiveParts)) {
+    return NextResponse.json(
+      { error: "You're not currently designated to receive warehouse parts." },
+      { status: 403 }
+    );
+  }
+
   const body = await req.json();
   const parsed = createPartSchema.safeParse(body);
   if (!parsed.success) {

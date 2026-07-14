@@ -39,17 +39,26 @@ export function canRunReports(role?: string | null) {
   );
 }
 
-export function canReceiveWarehouseStock(role?: string | null) {
-  return (
-    role === "SUPER_ADMIN" ||
-    role === "ADMIN" ||
-    role === "WAREHOUSE_MANAGER" ||
-    role === "WAREHOUSE_EMPLOYEE"
-  );
+// Besides the super admin (always allowed), only MAX_DESIGNATED_RECEIVERS
+// people can be flagged to receive warehouse parts at a time. Enforced in
+// app/api/users/[id]/route.ts when the flag is toggled on.
+export const MAX_DESIGNATED_RECEIVERS = 2;
+
+export function canReceiveWarehouseStock(role?: string | null, canReceiveParts?: boolean | null) {
+  return role === "SUPER_ADMIN" || !!canReceiveParts;
 }
 
 export function canCheckoutToTruck(role?: string | null) {
   return role === "SUPER_ADMIN" || role === "ADMIN" || role === "TRUCK_TECH";
+}
+
+export function canEditParts(role?: string | null) {
+  return (
+    role === "SUPER_ADMIN" ||
+    role === "ADMIN" ||
+    role === "MANAGER" ||
+    role === "WAREHOUSE_MANAGER"
+  );
 }
 
 export function isSuperAdmin(role?: string | null) {

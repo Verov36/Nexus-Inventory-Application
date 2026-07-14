@@ -46,6 +46,10 @@ model User {
   email        String   @unique
   passwordHash String
   role         Role
+  // Independent of role — the warehouse manager designates up to two people
+  // (besides the super admin, who always has access) allowed to receive
+  // parts. Toggled in /admin/users, capped and enforced server-side.
+  canReceiveParts Boolean @default(false)
   truck        Truck?   @relation("TruckTech")
   createdAt    DateTime @default(now())
 

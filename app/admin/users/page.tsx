@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ROLES, ROLE_LABELS } from "@/lib/roles";
+import { ROLES, ROLE_LABELS, MAX_DESIGNATED_RECEIVERS } from "@/lib/roles";
 
-type User = { id: string; name: string; email: string; role: string; createdAt: string };
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  canReceiveParts: boolean;
+  createdAt: string;
+};
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -23,6 +30,8 @@ export default function UsersPage() {
     load();
   }, []);
 
+  const receiverCount = users.filter((u) => u.canReceiveParts && u.role !== "SUPER_ADMIN").length;
+
   async function createUser() {
     setError(null);
     setBusy(true);
@@ -41,16 +50,16 @@ export default function UsersPage() {
     load();
   }
 
-  async function changeRole(id: string, role: string) {
+  async function patchUser(id: string, body: Record<string, unknown>) {
     setError(null);
     const res = await fetch(`/api/users/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const data = await res.json();
-      setError(typeof data.error === "string" ? data.error : "Couldn't update role.");
+      setError(typeof data.error === "string" ? data.error : "Couldn't update user.");
       return;
     }
     load();
@@ -72,6 +81,11 @@ export default function UsersPage() {
     <main className="mx-auto min-h-screen max-w-3xl bg-nexus-paper px-4 pb-24 pt-8">
       <h1 className="text-2xl font-medium text-nexus-navy">Users & permissions</h1>
       <p className="mt-1 text-nexus-steel">Add techs and staff, and control what each role can access.</p>
+
+      <p className="mt-2 text-sm text-nexus-steel">
+        Designated warehouse receivers: <span className="font-medium text-nexus-navy">{receiverCount}</span> /{" "}
+        {MAX_DESIGNATED_RECEIVERS} (the super admin always has receiving access on top of this).
+      </p>
 
       {error && (
         <p className="mt-4 rounded-lg border-2 border-nexus-danger/40 bg-white p-3 text-sm text-nexus-danger">
@@ -127,15 +141,26 @@ export default function UsersPage() {
       <section className="mt-6">
         <ul className="divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
           {users.map((u) => (
-            <li key={u.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <li key={u.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-medium text-nexus-navy">{u.name}</p>
                 <p className="text-sm text-nexus-steel">{u.email}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {u.role !== "SUPER_ADMIN" && (
+                  <label className="tap-target flex items-center gap-2 rounded-lg border-2 border-nexus-steel/30 px-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={u.canReceiveParts}
+                      disabled={!u.canReceiveParts && receiverCount >= MAX_DESIGNATED_RECEIVERS}
+                      onChange={(e) => patchUser(u.id, { canReceiveParts: e.target.checked })}
+                    />
+                    Can receive parts
+                  </label>
+                )}
                 <select
                   value={u.role}
-                  onChange={(e) => changeRole(u.id, e.target.value)}
+                  onChange={(e) => patchUser(u.id, { role: e.target.value })}
                   className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
                 >
                   {ROLES.map((r) => (

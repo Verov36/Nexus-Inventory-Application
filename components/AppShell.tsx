@@ -6,14 +6,14 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { ROLE_LABELS } from "@/lib/roles";
 
-type NavItem = { href: string; label: string; roles?: string[] };
+type NavItem = { href: string; label: string; roles?: string[]; extraCheck?: (role?: string, canReceiveParts?: boolean) => boolean };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home" },
+  { href: "/", label: "Inventory" },
   {
     href: "/warehouse/receiving",
     label: "Warehouse receiving",
-    roles: ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_MANAGER", "WAREHOUSE_EMPLOYEE"],
+    extraCheck: (role, canReceiveParts) => role === "SUPER_ADMIN" || !!canReceiveParts,
   },
   {
     href: "/truck/checkout",
@@ -55,8 +55,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (pathname === "/login") return <>{children}</>;
 
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  const visibleItems = NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
+  const role = (session?.user as { role?: string; canReceiveParts?: boolean } | undefined)?.role;
+  const canReceiveParts = (session?.user as { canReceiveParts?: boolean } | undefined)?.canReceiveParts;
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.extraCheck) return item.extraCheck(role, canReceiveParts);
+    return !item.roles || (role && item.roles.includes(role));
+  });
 
   return (
     <div className="min-h-screen bg-nexus-paper md:flex">
