@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 
-type ImportResults = { created: number; updated: number; skipped: { line: number; reason: string }[] };
+type ImportResults = {
+  created: number;
+  updated: number;
+  stocked: number;
+  skipped: { line: number; reason: string }[];
+};
+
+const DEFAULT_WAREHOUSE_ID = process.env.NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID ?? "";
 
 export default function ImportPage() {
   const { data: session } = useSession();
@@ -35,7 +42,7 @@ export default function ImportPage() {
     const res = await fetch("/api/admin/import-parts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ csv: csvText }),
+      body: JSON.stringify({ csv: csvText, warehouseId: DEFAULT_WAREHOUSE_ID }),
     });
     setBusy(false);
     const data = await res.json();
@@ -55,6 +62,11 @@ export default function ImportPage() {
         <p className="text-sm text-nexus-steel">
           Required columns: <code>sku, name, barcodeValue</code>. Optional: <code>category, unitCost,
           reorderThreshold</code>. Existing SKUs are updated; new SKUs are created.
+        </p>
+        <p className="mt-2 text-sm text-nexus-steel">
+          Add an <code>initialQuantity</code> column if you want the import to also stock the warehouse —
+          without it, parts are added to the catalog only, with zero on-hand quantity, and won't show up on
+          the inventory page until received normally.
         </p>
 
         <input
@@ -91,7 +103,8 @@ export default function ImportPage() {
         <div className="mt-4 rounded-xl border-2 border-nexus-ok/40 bg-white p-4">
           <p>
             Created <span className="font-medium">{results.created}</span>, updated{" "}
-            <span className="font-medium">{results.updated}</span>
+            <span className="font-medium">{results.updated}</span>, stocked{" "}
+            <span className="font-medium">{results.stocked}</span>
           </p>
           {results.skipped.length > 0 && (
             <div className="mt-3">
