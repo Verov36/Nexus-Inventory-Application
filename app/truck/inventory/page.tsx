@@ -48,9 +48,6 @@ export default function TruckInventoryPage() {
   return (
     <main className="mx-auto min-h-screen max-w-2xl bg-nexus-paper px-4 pb-24 pt-8">
       <h1 className="text-2xl font-medium text-nexus-navy">Truck inventory</h1>
-      <p className="mt-1 text-sm text-nexus-steel">
-        Job stock is what's been checked out for a specific work order; truck stock is general restock, not tied to a job.
-      </p>
 
       <div className="mt-6 flex flex-col gap-4">
         {trucks.map((truck) => {
@@ -69,23 +66,24 @@ export default function TruckInventoryPage() {
                       const limit = truck.stockLimits.find((l) => l.part?.id === sl.part.id);
                       const overCap = limit && sl.quantity > limit.maxQty;
                       return (
-                        <li key={i} className="py-2">
-                          <div className="flex items-center justify-between">
-                            <span>
-                              {sl.part.name}{" "}
-                              <span className="font-data text-xs text-nexus-steel">({sl.part.sku})</span>
-                            </span>
+                        <li key={i} className="flex items-center justify-between py-2">
+                          <span>
+                            {sl.part.name}{" "}
+                            <span className="font-data text-xs text-nexus-steel">({sl.part.sku})</span>
+                          </span>
+                          <div className="text-right">
+                            {(sl.jobQuantity > 0 || sl.restockQuantity > 0) && (
+                              <p className="font-data text-xs text-nexus-steel">
+                                {sl.jobQuantity > 0 && `Job ${sl.jobQuantity}`}
+                                {sl.jobQuantity > 0 && sl.restockQuantity > 0 && " · "}
+                                {sl.restockQuantity > 0 && `Truck ${sl.restockQuantity}`}
+                              </p>
+                            )}
                             <span className={overCap ? "font-data font-medium text-nexus-danger" : "font-data font-medium"}>
                               {sl.quantity}
                               {limit ? ` / ${limit.maxQty}` : ""}
                             </span>
                           </div>
-                          {(sl.jobQuantity > 0 || sl.restockQuantity > 0) && (
-                            <div className="mt-1 flex gap-3 text-xs text-nexus-steel">
-                              {sl.jobQuantity > 0 && <span>Job stock: {sl.jobQuantity}</span>}
-                              {sl.restockQuantity > 0 && <span>Truck stock: {sl.restockQuantity}</span>}
-                            </div>
-                          )}
                         </li>
                       );
                     })}
