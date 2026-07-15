@@ -37,11 +37,12 @@ export async function GET(req: NextRequest) {
 }
 
 function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
-  const header = ["Date", "Tech", "Part", "Quantity", "Checkout type", "Job number", "Flagged overage"];
+  const header = ["Date", "Tech", "SKU", "Part", "Quantity", "Checkout type", "Job number", "Flagged overage"];
   const lines = rows.map((r) => {
     return [
       new Date(r.createdAt).toISOString(),
       r.performedBy?.name ?? "",
+      r.part?.sku ?? "",
       r.part?.name ?? "",
       r.quantity,
       r.checkoutType ?? "",

@@ -100,9 +100,9 @@ export default function InventoryHomePage() {
         subtitle="Everything currently checked into stock."
         actions={
           <>
-            <a href="/api/inventory/warehouse?format=csv">
+            <a href={`/api/inventory/warehouse?format=csv${lowStockOnly ? "&lowStock=true" : ""}`}>
               <Button variant="secondary" icon={<Download size={16} />}>
-                Export
+                {lowStockOnly ? "Export low stock" : "Export"}
               </Button>
             </a>
             <Link href="/warehouse/receiving">

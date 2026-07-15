@@ -10,7 +10,7 @@ type Justification = {
   createdAt: string;
   truck: { label: string; tech: { name: string } | null };
   submittedBy: { name: string };
-  transaction: { part: { name: string }; quantity: number } | null;
+  transaction: { part: { sku: string; name: string }; quantity: number } | null;
 };
 
 export default function JustificationsPage() {
@@ -69,7 +69,8 @@ export default function JustificationsPage() {
             </div>
             {item.transaction && (
               <p className="mt-1 text-sm text-nexus-steel">
-                {item.transaction.quantity} × {item.transaction.part.name}
+                {item.transaction.quantity} × {item.transaction.part.name}{" "}
+                <span className="font-data text-xs">({item.transaction.part.sku})</span>
               </p>
             )}
             <p className="mt-2">{item.explanation}</p>

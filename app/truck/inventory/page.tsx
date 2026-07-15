@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 type Truck = {
   id: string;
   label: string;
-  stockLevels: { part: { id: string; name: string }; quantity: number }[];
-  stockLimits: { part: { id: string; name: string } | null; category: string | null; maxQty: number }[];
+  stockLevels: { part: { id: string; sku: string; name: string }; quantity: number }[];
+  stockLimits: { part: { id: string; sku: string; name: string } | null; category: string | null; maxQty: number }[];
 };
 
 export default function TruckInventoryPage() {
@@ -32,8 +32,10 @@ export default function TruckInventoryPage() {
                 const overCap = limit && sl.quantity > limit.maxQty;
                 return (
                   <li key={i} className="flex items-center justify-between py-2">
-                    <span>{sl.part.name}</span>
-                    <span className={overCap ? "font-medium text-nexus-danger" : ""}>
+                    <span>
+                      {sl.part.name} <span className="font-data text-xs text-nexus-steel">({sl.part.sku})</span>
+                    </span>
+                    <span className={overCap ? "font-data font-medium text-nexus-danger" : "font-data"}>
                       {sl.quantity}
                       {limit ? ` / ${limit.maxQty}` : ""}
                     </span>

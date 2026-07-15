@@ -27,8 +27,9 @@ export async function generateUsageSummary(from: Date, to: Date) {
       jobUseCount: items.filter((i) => i.checkoutType === "JOB_USE").length,
       restockCount: items.filter((i) => i.checkoutType === "RESTOCK").length,
     })),
-    byPart: groupBy(rows, (r) => r.part.name).map(([part, items]) => ({
-      part,
+    byPart: groupBy(rows, (r) => r.part.id).map(([, items]) => ({
+      sku: items[0].part.sku,
+      part: items[0].part.name,
       quantity: items.reduce((sum, i) => sum + i.quantity, 0),
     })),
     byJob: groupBy(
@@ -36,7 +37,7 @@ export async function generateUsageSummary(from: Date, to: Date) {
       (r) => r.partUsage!.job.jobNumber
     ).map(([jobNumber, items]) => ({
       jobNumber,
-      parts: items.map((i) => ({ part: i.part.name, quantity: i.quantity })),
+      parts: items.map((i) => ({ sku: i.part.sku, part: i.part.name, quantity: i.quantity })),
     })),
   };
 }

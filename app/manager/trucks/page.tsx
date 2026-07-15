@@ -7,8 +7,8 @@ type Truck = {
   label: string;
   active: boolean;
   tech: { id: string; name: string; email: string } | null;
-  stockLevels: { part: { name: string }; quantity: number }[];
-  stockLimits: { id: string; part: { name: string } | null; category: string | null; maxQty: number }[];
+  stockLevels: { part: { sku: string; name: string }; quantity: number }[];
+  stockLimits: { id: string; part: { sku: string; name: string } | null; category: string | null; maxQty: number }[];
 };
 
 type PartOption = { id: string; sku: string; name: string; category: string | null };
@@ -175,7 +175,9 @@ export default function ManagerTrucksPage() {
                 <ul className="mt-3 divide-y divide-nexus-steel/10 text-sm">
                   {truck.stockLevels.map((sl, i) => (
                     <li key={i} className="flex justify-between py-1">
-                      <span>{sl.part.name}</span>
+                      <span>
+                        {sl.part.name} <span className="font-data text-xs text-nexus-steel">({sl.part.sku})</span>
+                      </span>
                       <span>{sl.quantity}</span>
                     </li>
                   ))}
@@ -188,7 +190,14 @@ export default function ManagerTrucksPage() {
                   <ul className="text-sm">
                     {truck.stockLimits.map((l) => (
                       <li key={l.id}>
-                        {(l.part?.name ?? l.category) as string}: max {l.maxQty}
+                        {l.part ? (
+                          <>
+                            {l.part.name} <span className="font-data text-xs text-nexus-steel">({l.part.sku})</span>
+                          </>
+                        ) : (
+                          l.category
+                        )}
+                        : max {l.maxQty}
                       </li>
                     ))}
                   </ul>

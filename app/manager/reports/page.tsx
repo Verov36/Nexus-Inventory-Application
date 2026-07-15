@@ -9,8 +9,8 @@ type Summary = {
   restockCount: number;
   flaggedOverages: number;
   byTech: { tech: string; partsCheckedOut: number; jobUseCount: number; restockCount: number }[];
-  byPart: { part: string; quantity: number }[];
-  byJob: { jobNumber: string; parts: { part: string; quantity: number }[] }[];
+  byPart: { sku: string; part: string; quantity: number }[];
+  byJob: { jobNumber: string; parts: { sku: string; part: string; quantity: number }[] }[];
 };
 
 type Schedule = { id: string; frequencyDays: number; lastRunAt: string | null; nextRunAt: string };
@@ -190,7 +190,9 @@ export default function ReportsPage() {
             <ul className="mt-2 divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
               {summary.byPart.map((p, i) => (
                 <li key={i} className="flex justify-between px-4 py-2 text-sm">
-                  <span>{p.part}</span>
+                  <span>
+                    {p.part} <span className="font-data text-xs text-nexus-steel">({p.sku})</span>
+                  </span>
                   <span>{p.quantity}</span>
                 </li>
               ))}
@@ -204,7 +206,7 @@ export default function ReportsPage() {
                 <li key={i} className="px-4 py-2 text-sm">
                   <p className="font-medium">{j.jobNumber}</p>
                   <p className="text-nexus-steel">
-                    {j.parts.map((p) => `${p.part} ×${p.quantity}`).join(", ")}
+                    {j.parts.map((p) => `${p.part} (${p.sku}) ×${p.quantity}`).join(", ")}
                   </p>
                 </li>
               ))}
