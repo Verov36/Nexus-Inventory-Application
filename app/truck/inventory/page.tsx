@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type StockItem = {
   part: { id: string; sku: string; name: string; category: string | null };
@@ -27,8 +27,6 @@ function groupByCategory(items: StockItem[]) {
   for (const items of groups.values()) {
     items.sort((a, b) => a.part.name.localeCompare(b.part.name));
   }
-  // Alphabetical by category, with Uncategorized pushed to the end rather
-  // than sorting wherever "U" happens to land.
   return Array.from(groups.entries()).sort(([a], [b]) => {
     if (a === UNCATEGORIZED) return 1;
     if (b === UNCATEGORIZED) return -1;
@@ -58,32 +56,39 @@ export default function TruckInventoryPage() {
 
               {grouped.length === 0 && <p className="mt-2 text-sm text-nexus-steel">Nothing checked out to this truck yet.</p>}
 
+              {grouped.length > 0 && (
+                <div className="mt-3 grid grid-cols-[1fr,3.5rem,3.5rem,4rem] gap-x-2 text-xs font-medium uppercase tracking-wide text-nexus-steel">
+                  <span></span>
+                  <span className="text-right">Job</span>
+                  <span className="text-right">Truck</span>
+                  <span className="text-right">Total</span>
+                </div>
+              )}
+
               {grouped.map(([category, items]) => (
-                <div key={category} className="mt-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-nexus-steel">{category}</p>
-                  <ul className="mt-1 divide-y divide-nexus-steel/10 text-sm">
+                <div key={category} className="mt-2">
+                  <p className="border-t border-nexus-steel/10 pt-2 text-xs font-medium uppercase tracking-wide text-nexus-steel">
+                    {category}
+                  </p>
+                  <ul className="divide-y divide-nexus-steel/10 text-sm">
                     {items.map((sl, i) => {
                       const limit = truck.stockLimits.find((l) => l.part?.id === sl.part.id);
                       const overCap = limit && sl.quantity > limit.maxQty;
                       return (
-                        <li key={i} className="flex items-center justify-between py-2">
-                          <span>
+                        <li
+                          key={i}
+                          className="grid grid-cols-[1fr,3.5rem,3.5rem,4rem] items-center gap-x-2 py-2"
+                        >
+                          <span className="truncate">
                             {sl.part.name}{" "}
                             <span className="font-data text-xs text-nexus-steel">({sl.part.sku})</span>
                           </span>
-                          <div className="text-right">
-                            {(sl.jobQuantity > 0 || sl.restockQuantity > 0) && (
-                              <p className="font-data text-xs text-nexus-steel">
-                                {sl.jobQuantity > 0 && `Job ${sl.jobQuantity}`}
-                                {sl.jobQuantity > 0 && sl.restockQuantity > 0 && " · "}
-                                {sl.restockQuantity > 0 && `Truck ${sl.restockQuantity}`}
-                              </p>
-                            )}
-                            <span className={overCap ? "font-data font-medium text-nexus-danger" : "font-data font-medium"}>
-                              {sl.quantity}
-                              {limit ? ` / ${limit.maxQty}` : ""}
-                            </span>
-                          </div>
+                          <span className="text-right font-data text-nexus-steel">{sl.jobQuantity || "–"}</span>
+                          <span className="text-right font-data text-nexus-steel">{sl.restockQuantity || "–"}</span>
+                          <span className={`text-right font-data font-medium ${overCap ? "text-nexus-danger" : "text-nexus-navy"}`}>
+                            {sl.quantity}
+                            {limit ? `/${limit.maxQty}` : ""}
+                          </span>
                         </li>
                       );
                     })}
