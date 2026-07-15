@@ -27,6 +27,16 @@ type ReceivedEntry = {
 // multi-warehouse support / org context is wired in.
 const DEFAULT_WAREHOUSE_ID = process.env.NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID ?? "";
 
+/** Reads a fetch Response as JSON, tolerating a non-JSON body (raw 500 page,
+ * empty response, etc.) instead of throwing and silently killing the caller. */
+async function safeJson(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 export default function ReceivingPage() {
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [matchedPart, setMatchedPart] = useState<Part | null>(null);
@@ -35,70 +45,98 @@ export default function ReceivingPage() {
   const [newPart, setNewPart] = useState({ sku: "", name: "", category: "" });
   const [log, setLog] = useState<ReceivedEntry[]>([]);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function handleScan(barcode: string) {
     setScannedBarcode(barcode);
     setLookupState("loading");
     setPrintStatus(null);
-    const res = await fetch(`/api/parts?barcode=${encodeURIComponent(barcode)}`);
-    const data = await res.json();
-    if (data.part) {
-      setMatchedPart(data.part);
+    setError(null);
+    try {
+      const res = await fetch(`/api/parts?barcode=${encodeURIComponent(barcode)}`);
+      const data = await safeJson(res);
+      if (!res.ok) {
+        setLookupState("idle");
+        setError(typeof data.error === "string" ? data.error : `Couldn't look up that barcode (${res.status}).`);
+        return;
+      }
+      if (data.part) {
+        setMatchedPart(data.part as Part);
+        setLookupState("idle");
+      } else {
+        setMatchedPart(null);
+        setLookupState("not_found");
+        setNewPart({ sku: "", name: "", category: "" });
+      }
+    } catch {
       setLookupState("idle");
-    } else {
-      setMatchedPart(null);
-      setLookupState("not_found");
-      setNewPart({ sku: "", name: "", category: "" });
+      setError("Couldn't reach the server to look up that barcode — check your connection.");
     }
   }
 
   async function createPartFromScan() {
     if (!scannedBarcode) return;
     setBusy(true);
-    const res = await fetch("/api/parts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sku: newPart.sku,
-        name: newPart.name,
-        category: newPart.category || undefined,
-        barcodeValue: scannedBarcode,
-      }),
-    });
-    setBusy(false);
-    if (res.ok) {
-      const data = await res.json();
-      setMatchedPart(data.part);
-      setLookupState("idle");
-    } else {
-      const err = await res.json();
-      alert("Couldn't create part: " + JSON.stringify(err.error));
+    setError(null);
+    try {
+      const res = await fetch("/api/parts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sku: newPart.sku,
+          name: newPart.name,
+          category: newPart.category || undefined,
+          barcodeValue: scannedBarcode,
+        }),
+      });
+      setBusy(false);
+      const data = await safeJson(res);
+      if (res.ok) {
+        setMatchedPart(data.part as Part);
+        setLookupState("idle");
+      } else {
+        setError(typeof data.error === "string" ? data.error : `Couldn't create the part (${res.status}).`);
+      }
+    } catch {
+      setBusy(false);
+      setError("Couldn't reach the server to create the part — check your connection.");
     }
   }
 
   async function receivePart() {
-    if (!matchedPart || !DEFAULT_WAREHOUSE_ID) {
-      if (!DEFAULT_WAREHOUSE_ID) alert("No warehouse configured — set NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID.");
+    if (!matchedPart) return;
+    if (!DEFAULT_WAREHOUSE_ID) {
+      setError("No warehouse configured — a manager needs to set NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID.");
       return;
     }
     setBusy(true);
-    const res = await fetch("/api/inventory/receive", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        partId: matchedPart.id,
-        warehouseId: DEFAULT_WAREHOUSE_ID,
-        quantity,
-      }),
-    });
-    setBusy(false);
-    if (res.ok) {
-      setLog((prev) => [{ part: matchedPart, quantity, at: new Date().toLocaleTimeString() }, ...prev]);
-      resetScan();
-    } else {
-      const err = await res.json();
-      alert("Couldn't record receipt: " + JSON.stringify(err.error));
+    setError(null);
+    try {
+      const res = await fetch("/api/inventory/receive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partId: matchedPart.id,
+          warehouseId: DEFAULT_WAREHOUSE_ID,
+          quantity,
+        }),
+      });
+      setBusy(false);
+      const data = await safeJson(res);
+      if (res.ok) {
+        setLog((prev) => [{ part: matchedPart, quantity, at: new Date().toLocaleTimeString() }, ...prev]);
+        resetScan();
+      } else {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : `Couldn't record the receipt (${res.status}). Nothing was added to inventory — try again.`
+        );
+      }
+    } catch {
+      setBusy(false);
+      setError("Couldn't reach the server — check your connection. Nothing was added to inventory.");
     }
   }
 
@@ -136,6 +174,12 @@ export default function ReceivingPage() {
       <div className="mt-6">
         <ScannerInput onScan={handleScan} />
       </div>
+
+      {error && (
+        <Card accent="danger" className="mt-4 p-3">
+          <p className="text-sm text-nexus-danger">{error}</p>
+        </Card>
+      )}
 
       {lookupState === "loading" && <p className="mt-4 text-nexus-steel">Looking up part…</p>}
 
@@ -190,7 +234,7 @@ export default function ReceivingPage() {
 
           <div className="mt-4 flex flex-wrap gap-3">
             <Button onClick={receivePart} disabled={busy} icon={<CheckCircle2 size={16} />} className="flex-1">
-              Check into stock
+              {busy ? "Saving…" : "Check into stock"}
             </Button>
             <Button onClick={handlePrint} variant="secondary" icon={<Printer size={16} />}>
               Print {quantity > 1 ? `(${quantity})` : "label"}
