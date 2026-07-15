@@ -17,13 +17,14 @@ import {
   Menu,
   X,
   LogOut,
+  type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS } from "@/lib/roles";
 
 type NavItem = {
   href: string;
   label: string;
-  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  icon: LucideIcon;
   roles?: string[];
   extraCheck?: (role?: string, canReceiveParts?: boolean) => boolean;
 };
