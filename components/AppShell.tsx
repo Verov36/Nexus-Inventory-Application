@@ -37,6 +37,11 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "WAREHOUSE_MANAGER"],
   },
   {
+    href: "/manager/audit",
+    label: "Inventory audit",
+    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "WAREHOUSE_MANAGER"],
+  },
+  {
     href: "/admin/users",
     label: "Users & permissions",
     roles: ["SUPER_ADMIN", "ADMIN"],
