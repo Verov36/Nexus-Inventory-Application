@@ -17,6 +17,8 @@ export default function UsersPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "TRUCK_TECH" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "", password: "" });
 
   async function load() {
     const res = await fetch("/api/users");
@@ -60,9 +62,29 @@ export default function UsersPage() {
     if (!res.ok) {
       const data = await res.json();
       setError(typeof data.error === "string" ? data.error : "Couldn't update user.");
-      return;
+      return false;
     }
     load();
+    return true;
+  }
+
+  function startEdit(u: User) {
+    setEditingId(u.id);
+    setEditForm({ name: u.name, email: u.email, password: "" });
+    setError(null);
+  }
+
+  async function saveEdit(id: string) {
+    const body: Record<string, unknown> = { name: editForm.name, email: editForm.email };
+    if (editForm.password) {
+      if (editForm.password.length < 8) {
+        setError("New password must be at least 8 characters.");
+        return;
+      }
+      body.password = editForm.password;
+    }
+    const ok = await patchUser(id, body);
+    if (ok) setEditingId(null);
   }
 
   async function deleteUser(id: string) {
@@ -141,41 +163,88 @@ export default function UsersPage() {
       <section className="mt-6">
         <ul className="divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
           {users.map((u) => (
-            <li key={u.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-medium text-nexus-navy">{u.name}</p>
-                <p className="text-sm text-nexus-steel">{u.email}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {u.role !== "SUPER_ADMIN" && (
-                  <label className="tap-target flex items-center gap-2 rounded-lg border-2 border-nexus-steel/30 px-3 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={u.canReceiveParts}
-                      disabled={!u.canReceiveParts && receiverCount >= MAX_DESIGNATED_RECEIVERS}
-                      onChange={(e) => patchUser(u.id, { canReceiveParts: e.target.checked })}
-                    />
-                    Can receive parts
-                  </label>
-                )}
-                <select
-                  value={u.role}
-                  onChange={(e) => patchUser(u.id, { role: e.target.value })}
-                  className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_LABELS[r]}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => deleteUser(u.id)}
-                  className="tap-target rounded-lg border-2 border-nexus-danger/40 px-3 text-sm text-nexus-danger"
-                >
-                  Remove
-                </button>
-              </div>
+            <li key={u.id} className="px-4 py-3">
+              {editingId === u.id ? (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs text-nexus-steel">Name</label>
+                  <input
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
+                  />
+                  <label className="text-xs text-nexus-steel">Email</label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
+                  />
+                  <label className="text-xs text-nexus-steel">New password (leave blank to keep current)</label>
+                  <input
+                    type="password"
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
+                  />
+                  <div className="mt-1 flex gap-2">
+                    <button
+                      onClick={() => saveEdit(u.id)}
+                      className="tap-target flex-1 rounded-lg bg-nexus-ok font-medium text-white"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="tap-target rounded-lg border-2 border-nexus-steel/30 px-4 text-nexus-steel"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-nexus-navy">{u.name}</p>
+                    <p className="text-sm text-nexus-steel">{u.email}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => startEdit(u)}
+                      className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm text-nexus-navy"
+                    >
+                      Edit
+                    </button>
+                    {u.role !== "SUPER_ADMIN" && (
+                      <label className="tap-target flex items-center gap-2 rounded-lg border-2 border-nexus-steel/30 px-3 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={u.canReceiveParts}
+                          disabled={!u.canReceiveParts && receiverCount >= MAX_DESIGNATED_RECEIVERS}
+                          onChange={(e) => patchUser(u.id, { canReceiveParts: e.target.checked })}
+                        />
+                        Can receive parts
+                      </label>
+                    )}
+                    <select
+                      value={u.role}
+                      onChange={(e) => patchUser(u.id, { role: e.target.value })}
+                      className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
+                    >
+                      {ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => deleteUser(u.id)}
+                      className="tap-target rounded-lg border-2 border-nexus-danger/40 px-3 text-sm text-nexus-danger"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

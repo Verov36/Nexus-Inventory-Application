@@ -3,8 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageUsers, ROLES, MAX_DESIGNATED_RECEIVERS } from "@/lib/roles";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 
 const updateSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(8).optional(),
   role: z.enum(ROLES).optional(),
   canReceiveParts: z.boolean().optional(),
 });
@@ -20,28 +24,65 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  if (parsed.data.role === undefined && parsed.data.canReceiveParts === undefined) {
+  const { name, email, password, role, canReceiveParts } = parsed.data;
+  if (
+    name === undefined &&
+    email === undefined &&
+    password === undefined &&
+    role === undefined &&
+    canReceiveParts === undefined
+  ) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
   const target = await prisma.user.findUnique({ where: { id: params.id } });
   if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const data: { role?: (typeof ROLES)[number]; canReceiveParts?: boolean } = {};
+  // Editing basic profile fields (name/email/password) on an Admin or Super
+  // Admin account is also restricted to a super admin, same as role changes —
+  // otherwise an Admin could quietly take over another Admin's account by
+  // changing their email/password.
+  const targetIsAdminTier = target.role === "SUPER_ADMIN" || target.role === "ADMIN";
+  if ((name !== undefined || email !== undefined || password !== undefined) && targetIsAdminTier) {
+    if (actingRole !== "SUPER_ADMIN" && session?.user?.id !== target.id) {
+      return NextResponse.json(
+        { error: "Only a super admin (or the account owner) can edit an Admin or Super Admin's details" },
+        { status: 403 }
+      );
+    }
+  }
 
-  if (parsed.data.role !== undefined) {
-    const touchesAdminTier =
-      parsed.data.role === "SUPER_ADMIN" ||
-      parsed.data.role === "ADMIN" ||
-      target.role === "SUPER_ADMIN" ||
-      target.role === "ADMIN";
+  const data: {
+    name?: string;
+    email?: string;
+    passwordHash?: string;
+    role?: (typeof ROLES)[number];
+    canReceiveParts?: boolean;
+  } = {};
+
+  if (name !== undefined) data.name = name;
+
+  if (email !== undefined && email !== target.email) {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json({ error: "Another user already has that email" }, { status: 409 });
+    }
+    data.email = email;
+  }
+
+  if (password !== undefined) {
+    data.passwordHash = await bcrypt.hash(password, 10);
+  }
+
+  if (role !== undefined) {
+    const touchesAdminTier = role === "SUPER_ADMIN" || role === "ADMIN" || targetIsAdminTier;
     if (touchesAdminTier && actingRole !== "SUPER_ADMIN") {
       return NextResponse.json(
         { error: "Only a super admin can change Admin or Super Admin permissions" },
         { status: 403 }
       );
     }
-    if (target.role === "SUPER_ADMIN" && parsed.data.role !== "SUPER_ADMIN") {
+    if (target.role === "SUPER_ADMIN" && role !== "SUPER_ADMIN") {
       const remainingSuperAdmins = await prisma.user.count({
         where: { role: "SUPER_ADMIN", id: { not: target.id } },
       });
@@ -52,17 +93,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         );
       }
     }
-    data.role = parsed.data.role;
+    data.role = role;
   }
 
-  if (parsed.data.canReceiveParts !== undefined) {
+  if (canReceiveParts !== undefined) {
     if (target.role === "SUPER_ADMIN") {
       return NextResponse.json(
         { error: "The super admin always has receiving access — no need to toggle it" },
         { status: 400 }
       );
     }
-    if (parsed.data.canReceiveParts === true && !target.canReceiveParts) {
+    if (canReceiveParts === true && !target.canReceiveParts) {
       const currentCount = await prisma.user.count({
         where: { canReceiveParts: true, role: { not: "SUPER_ADMIN" } },
       });
@@ -75,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         );
       }
     }
-    data.canReceiveParts = parsed.data.canReceiveParts;
+    data.canReceiveParts = canReceiveParts;
   }
 
   const user = await prisma.user.update({
