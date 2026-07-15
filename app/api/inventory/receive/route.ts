@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canReceiveWarehouseStock } from "@/lib/roles";
+import { adjustWarehouseStock } from "@/lib/inventory";
 
 const receiveSchema = z.object({
   partId: z.string().min(1),
@@ -43,47 +44,42 @@ export async function POST(req: NextRequest) {
   }
   const { partId, warehouseId, quantity } = parsed.data;
 
-  // NOTE: Postgres treats NULL as distinct in unique indexes, so the
-  // @@unique([partId, warehouseId, truckId]) constraint doesn't fully protect
-  // against duplicate warehouse rows (truckId always null here) under
-  // concurrent requests. Before production, add a partial unique index:
-  //   CREATE UNIQUE INDEX stock_level_warehouse_unique
-  //   ON "StockLevel" ("partId", "warehouseId") WHERE "truckId" IS NULL;
-  // and the truck equivalent for ("partId", "truckId") WHERE "warehouseId" IS NULL.
-  const result = await prisma.$transaction(async (tx) => {
+  const part = await prisma.part.findUnique({ where: { id: partId } });
+  if (!part) {
+    return NextResponse.json({ error: "Part not found" }, { status: 404 });
+  }
+  const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+  if (!warehouse) {
+    return NextResponse.json({ error: "Warehouse not found — check NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID" }, { status: 404 });
+  }
 
-    const stockLevel = await tx.stockLevel.upsert({
-      where: {
-        partId_warehouseId_truckId: {
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // find-then-create-or-update, same safe pattern used by checkout and
+      // the mass import — avoids relying on Postgres to detect a "conflict"
+      // on a NULL truckId, which a plain unique constraint never does.
+      const stockLevel = await adjustWarehouseStock(tx, partId, warehouseId, quantity);
+
+      const transaction = await tx.inventoryTransaction.create({
+        data: {
+          type: "RECEIVE",
           partId,
-          warehouseId,
-          truckId: null as unknown as string, // composite unique requires explicit null match
+          quantity,
+          toLocationType: "WAREHOUSE",
+          toWarehouseId: warehouseId,
+          performedById: userId,
         },
-      },
-      create: {
-        partId,
-        warehouseId,
-        locationType: "WAREHOUSE",
-        quantity,
-      },
-      update: {
-        quantity: { increment: quantity },
-      },
+      });
+
+      return { stockLevel, transaction };
     });
 
-    const transaction = await tx.inventoryTransaction.create({
-      data: {
-        type: "RECEIVE",
-        partId,
-        quantity,
-        toLocationType: "WAREHOUSE",
-        toWarehouseId: warehouseId,
-        performedById: userId,
-      },
-    });
-
-    return { stockLevel, transaction };
-  });
-
-  return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(result, { status: 201 });
+  } catch (err) {
+    console.error("Receive failed:", err);
+    return NextResponse.json(
+      { error: "Something went wrong recording this receipt. Nothing was added to inventory — try again." },
+      { status: 500 }
+    );
+  }
 }
