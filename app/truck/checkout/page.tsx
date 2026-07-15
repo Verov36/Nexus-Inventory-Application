@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import ScannerInput from "@/components/ScannerInput";
+import { Wrench, PackageCheck, AlertTriangle, Send, X } from "lucide-react";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Part = { id: string; sku: string; name: string; category: string | null; barcodeValue: string };
 
@@ -94,15 +98,14 @@ export default function TruckCheckoutPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-2xl bg-nexus-paper px-4 pb-24 pt-8">
-      <h1 className="text-2xl font-medium text-nexus-navy">Truck checkout</h1>
-      <p className="mt-1 text-nexus-steel">Scan a part to check it out to your truck.</p>
+    <div className="mx-auto max-w-2xl px-4 pb-24 pt-6 md:pt-10">
+      <PageHeader title="Truck checkout" subtitle="Scan a part to check it out to your truck." />
 
       <input
         value={truckId}
         onChange={(e) => setTruckId(e.target.value)}
         placeholder="Truck id (set once per shift)"
-        className="tap-target mt-4 w-full rounded-lg border-2 border-nexus-steel/30 bg-white px-4 text-sm"
+        className="tap-target mt-4 w-full rounded-lg border-2 border-nexus-line bg-white px-4 text-sm font-data"
       />
 
       <div className="mt-4">
@@ -112,26 +115,26 @@ export default function TruckCheckoutPage() {
       {status && <p className="mt-4 text-nexus-steel">{status}</p>}
 
       {part && !needsJustification && (
-        <section className="mt-6 rounded-xl border-2 border-nexus-steel/15 bg-white p-4">
-          <p className="text-sm text-nexus-steel">{part.sku}</p>
-          <p className="text-lg font-medium text-nexus-navy">{part.name}</p>
+        <Card className="mt-6 p-4">
+          <p className="font-data text-xs text-nexus-steel">{part.sku}</p>
+          <p className="font-display text-lg font-bold text-nexus-navy">{part.name}</p>
 
           <div className="mt-4 flex gap-2">
             <button
               onClick={() => setCheckoutType("JOB_USE")}
-              className={`tap-target flex-1 rounded-lg font-medium ${
-                checkoutType === "JOB_USE" ? "bg-nexus-navy text-white" : "border-2 border-nexus-steel/30 text-nexus-navy"
+              className={`tap-target flex flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors ${
+                checkoutType === "JOB_USE" ? "bg-nexus-navy text-white" : "border-2 border-nexus-line text-nexus-navy"
               }`}
             >
-              For a job
+              <Wrench size={16} /> For a job
             </button>
             <button
               onClick={() => setCheckoutType("RESTOCK")}
-              className={`tap-target flex-1 rounded-lg font-medium ${
-                checkoutType === "RESTOCK" ? "bg-nexus-navy text-white" : "border-2 border-nexus-steel/30 text-nexus-navy"
+              className={`tap-target flex flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors ${
+                checkoutType === "RESTOCK" ? "bg-nexus-navy text-white" : "border-2 border-nexus-line text-nexus-navy"
               }`}
             >
-              Truck restock
+              <PackageCheck size={16} /> Truck restock
             </button>
           </div>
 
@@ -140,7 +143,7 @@ export default function TruckCheckoutPage() {
               value={jobNumber}
               onChange={(e) => setJobNumber(e.target.value)}
               placeholder="Job / work order number"
-              className="tap-target mt-3 w-full rounded-lg border-2 border-nexus-steel/30 px-4"
+              className="tap-target mt-3 w-full rounded-lg border-2 border-nexus-line px-4 font-data"
             />
           )}
 
@@ -150,22 +153,24 @@ export default function TruckCheckoutPage() {
             min={1}
             value={quantity}
             onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-            className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-4 text-lg"
+            className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-line px-4 font-data text-lg"
           />
 
-          <button
+          <Button
             onClick={() => submitCheckout(false)}
             disabled={busy || !truckId || (checkoutType === "JOB_USE" && !jobNumber)}
-            className="tap-target mt-4 w-full rounded-lg bg-nexus-ok font-medium text-white disabled:opacity-40"
+            className="mt-4 w-full"
           >
             Check out to truck
-          </button>
-        </section>
+          </Button>
+        </Card>
       )}
 
       {needsJustification && (
-        <section className="mt-6 rounded-xl border-2 border-nexus-warn/50 bg-white p-4">
-          <p className="font-medium text-nexus-warn">Truck is over its stock cap</p>
+        <Card accent="warn" className="mt-6 p-4">
+          <p className="flex items-center gap-2 font-medium text-nexus-warn">
+            <AlertTriangle size={18} /> Truck is over its stock cap
+          </p>
           <p className="mt-1 text-sm text-nexus-steel">{needsJustification.message}</p>
 
           <label className="mt-4 block text-sm text-nexus-steel">
@@ -175,7 +180,7 @@ export default function TruckCheckoutPage() {
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
             rows={3}
-            className="mt-1 w-full rounded-lg border-2 border-nexus-steel/30 p-3"
+            className="mt-1 w-full rounded-lg border-2 border-nexus-line p-3"
           />
 
           <label className="mt-3 block text-sm text-nexus-steel">
@@ -184,29 +189,27 @@ export default function TruckCheckoutPage() {
           <input
             value={relatedJobNumbers}
             onChange={(e) => setRelatedJobNumbers(e.target.value)}
-            className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-steel/30 px-4"
+            className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-line px-4 font-data"
           />
 
           <div className="mt-4 flex gap-2">
-            <button
+            <Button
               onClick={() => submitCheckout(true)}
               disabled={busy || !explanation || !relatedJobNumbers}
-              className="tap-target flex-1 rounded-lg bg-nexus-warn font-medium text-white disabled:opacity-40"
+              className="flex-1 !bg-nexus-warn hover:!bg-nexus-warn/90"
+              icon={<Send size={16} />}
             >
               Submit and check out
-            </button>
-            <button
-              onClick={reset}
-              className="tap-target rounded-lg border-2 border-nexus-steel/30 px-4 font-medium text-nexus-steel"
-            >
+            </Button>
+            <Button onClick={reset} variant="secondary" icon={<X size={16} />}>
               Cancel
-            </button>
+            </Button>
           </div>
           <p className="mt-2 text-xs text-nexus-steel">
             This checkout goes through now and is flagged for a manager to review.
           </p>
-        </section>
+        </Card>
       )}
-    </main>
+    </div>
   );
 }

@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     orderBy: { part: { name: "asc" } },
   });
 
-  let items = stockLevels.map((sl) => ({
+  const items = stockLevels.map((sl) => ({
     partId: sl.part.id,
     sku: sl.part.sku,
     name: sl.part.name,
@@ -26,10 +26,6 @@ export async function GET(req: NextRequest) {
     updatedAt: sl.updatedAt,
   }));
 
-  if (req.nextUrl.searchParams.get("lowStock") === "true") {
-    items = items.filter((i) => i.lowStock);
-  }
-
   const format = req.nextUrl.searchParams.get("format");
   if (format === "csv") {
     const header = ["SKU", "Name", "Category", "Quantity", "Reorder threshold", "Low stock"];
@@ -39,11 +35,10 @@ export async function GET(req: NextRequest) {
         .join(",")
     );
     const csv = [header.join(","), ...lines].join("\n");
-    const filenameSuffix = req.nextUrl.searchParams.get("lowStock") === "true" ? "low-stock" : "full";
     return new NextResponse(csv, {
       headers: {
         "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="warehouse-inventory-${filenameSuffix}-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Content-Disposition": `attachment; filename="warehouse-inventory-${new Date().toISOString().slice(0, 10)}.csv"`,
       },
     });
   }

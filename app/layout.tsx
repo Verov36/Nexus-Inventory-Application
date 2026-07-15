@@ -1,9 +1,20 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { Manrope, Inter, IBM_Plex_Mono } from "next/font/google";
 import Providers from "./providers";
 import AppShell from "@/components/AppShell";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+
+// Manrope for headings — a little more geometric character than a default
+// sans, without tipping into decorative. Inter for body copy, since dense
+// data lists need a face that stays legible small. IBM Plex Mono for part
+// numbers, job numbers, SKUs, and barcodes specifically — these are the
+// "ticket numbers" of a dispatch operation and read better set apart from
+// prose, the way a work order or shipping label would set them.
+const display = Manrope({ subsets: ["latin"], variable: "--font-display", weight: ["600", "700", "800"] });
+const body = Inter({ subsets: ["latin"], variable: "--font-body" });
+const data = IBM_Plex_Mono({ subsets: ["latin"], variable: "--font-data", weight: ["500", "600"] });
 
 export const metadata: Metadata = {
   title: "Nexus Parts Inventory",
@@ -31,7 +42,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${display.variable} ${body.variable} ${data.variable}`}>
       <body>
         {/*
           Zebra Browser Print SDK — download from zebra.com/browserprint and

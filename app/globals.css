@@ -5,6 +5,16 @@
 html, body {
   background: #F4F5F3;
   color: #0F2438;
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display), var(--font-body), ui-sans-serif, sans-serif;
+}
+
+.font-data {
+  font-family: var(--font-data), ui-monospace, monospace;
+  font-feature-settings: "tnum";
 }
 
 /* Warehouse/truck tablets are used with gloves and in bright light —
@@ -14,5 +24,19 @@ button, input, select, textarea {
 }
 
 .tap-target {
-  min-height: 56px;
+  min-height: 48px;
+}
+
+/* Visible keyboard focus everywhere, including on custom controls. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #E8A33D;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

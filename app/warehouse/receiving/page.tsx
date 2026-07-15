@@ -3,6 +3,11 @@
 import { useState } from "react";
 import ScannerInput from "@/components/ScannerInput";
 import { printLabel } from "@/lib/zebra-print";
+import { PackagePlus, Printer, CheckCircle2 } from "lucide-react";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type Part = {
   id: string;
@@ -125,9 +130,8 @@ export default function ReceivingPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-2xl bg-nexus-paper px-4 pb-24 pt-8">
-      <h1 className="text-2xl font-medium text-nexus-navy">Warehouse receiving</h1>
-      <p className="mt-1 text-nexus-steel">Scan a part to check it into warehouse stock.</p>
+    <div className="mx-auto max-w-2xl px-4 pb-24 pt-6 md:pt-10">
+      <PageHeader title="Receiving" subtitle="Scan a part to check it into warehouse stock." />
 
       <div className="mt-6">
         <ScannerInput onScan={handleScan} />
@@ -136,43 +140,43 @@ export default function ReceivingPage() {
       {lookupState === "loading" && <p className="mt-4 text-nexus-steel">Looking up part…</p>}
 
       {lookupState === "not_found" && scannedBarcode && (
-        <section className="mt-6 rounded-xl border-2 border-nexus-warn/40 bg-white p-4">
+        <Card accent="warn" className="mt-6 p-4">
           <p className="font-medium text-nexus-warn">No part matches this barcode yet</p>
-          <p className="mt-1 text-sm text-nexus-steel">Barcode: {scannedBarcode}</p>
+          <p className="mt-1 font-data text-sm text-nexus-steel">{scannedBarcode}</p>
           <div className="mt-4 flex flex-col gap-3">
             <input
               placeholder="SKU"
               value={newPart.sku}
               onChange={(e) => setNewPart({ ...newPart, sku: e.target.value })}
-              className="tap-target rounded-lg border-2 border-nexus-steel/30 px-4"
+              className="tap-target rounded-lg border-2 border-nexus-line px-4 font-data"
             />
             <input
               placeholder="Part name"
               value={newPart.name}
               onChange={(e) => setNewPart({ ...newPart, name: e.target.value })}
-              className="tap-target rounded-lg border-2 border-nexus-steel/30 px-4"
+              className="tap-target rounded-lg border-2 border-nexus-line px-4"
             />
             <input
               placeholder="Category (optional)"
               value={newPart.category}
               onChange={(e) => setNewPart({ ...newPart, category: e.target.value })}
-              className="tap-target rounded-lg border-2 border-nexus-steel/30 px-4"
+              className="tap-target rounded-lg border-2 border-nexus-line px-4"
             />
-            <button
+            <Button
               onClick={createPartFromScan}
               disabled={busy || !newPart.sku || !newPart.name}
-              className="tap-target rounded-lg bg-nexus-navy font-medium text-white disabled:opacity-40"
+              icon={<PackagePlus size={16} />}
             >
-              Add part to catalog
-            </button>
+              Add to catalog
+            </Button>
           </div>
-        </section>
+        </Card>
       )}
 
       {matchedPart && (
-        <section className="mt-6 rounded-xl border-2 border-nexus-ok/40 bg-white p-4">
-          <p className="text-sm text-nexus-steel">{matchedPart.sku}</p>
-          <p className="text-lg font-medium text-nexus-navy">{matchedPart.name}</p>
+        <Card accent="ok" className="mt-6 p-4">
+          <p className="font-data text-xs text-nexus-steel">{matchedPart.sku}</p>
+          <p className="font-display text-lg font-bold text-nexus-navy">{matchedPart.name}</p>
           {matchedPart.category && <p className="text-sm text-nexus-steel">{matchedPart.category}</p>}
 
           <label className="mt-4 block text-sm text-nexus-steel">Quantity received</label>
@@ -181,45 +185,51 @@ export default function ReceivingPage() {
             min={1}
             value={quantity}
             onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-            className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-4 text-lg"
+            className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-line px-4 font-data text-lg"
           />
 
           <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              onClick={receivePart}
-              disabled={busy}
-              className="tap-target flex-1 rounded-lg bg-nexus-ok font-medium text-white disabled:opacity-40"
-            >
-              Check into warehouse stock
-            </button>
-            <button
-              onClick={handlePrint}
-              className="tap-target rounded-lg border-2 border-nexus-navy px-4 font-medium text-nexus-navy"
-            >
-              Print label{quantity > 1 ? `s (${quantity})` : ""}
-            </button>
+            <Button onClick={receivePart} disabled={busy} icon={<CheckCircle2 size={16} />} className="flex-1">
+              Check into stock
+            </Button>
+            <Button onClick={handlePrint} variant="secondary" icon={<Printer size={16} />}>
+              Print {quantity > 1 ? `(${quantity})` : "label"}
+            </Button>
           </div>
           {printStatus && <p className="mt-2 text-sm text-nexus-steel">{printStatus}</p>}
-        </section>
+        </Card>
+      )}
+
+      {log.length === 0 && lookupState === "idle" && !matchedPart && (
+        <div className="mt-8">
+          <EmptyState
+            icon={<PackagePlus size={32} />}
+            title="Nothing received this session"
+            description="Scan a barcode above to check the first part into warehouse stock."
+          />
+        </div>
       )}
 
       {log.length > 0 && (
         <section className="mt-8">
           <h2 className="text-sm font-medium text-nexus-steel">Received this session</h2>
-          <ul className="mt-2 divide-y divide-nexus-steel/15 rounded-xl border-2 border-nexus-steel/15 bg-white">
+          <ul className="mt-2 flex flex-col gap-2">
             {log.map((entry, i) => (
-              <li key={i} className="flex items-center justify-between px-4 py-3">
-                <span>
-                  {entry.part.name} <span className="text-nexus-steel">({entry.part.sku})</span>
-                </span>
-                <span className="font-medium">
-                  +{entry.quantity} <span className="text-nexus-steel">{entry.at}</span>
-                </span>
-              </li>
+              <Card key={i} as="li" accent="ok">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span>
+                    {entry.part.name}{" "}
+                    <span className="font-data text-xs text-nexus-steel">({entry.part.sku})</span>
+                  </span>
+                  <span className="font-data font-medium text-nexus-ok">
+                    +{entry.quantity} <span className="text-nexus-steel">{entry.at}</span>
+                  </span>
+                </div>
+              </Card>
             ))}
           </ul>
         </section>
       )}
-    </main>
+    </div>
   );
 }
