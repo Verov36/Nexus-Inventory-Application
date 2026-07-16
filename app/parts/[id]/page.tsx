@@ -27,6 +27,9 @@ type Transaction = {
   partUsage: { job: { jobNumber: string } } | null;
   justification: { status: string } | null;
   notes: string | null;
+  direction: "increase" | "decrease";
+  toWarehouseId: string | null;
+  fromWarehouseId: string | null;
 };
 
 export default function PartDetailPage() {
@@ -209,7 +212,8 @@ export default function PartDetailPage() {
                   {t.type === "RECEIVE" && "Received"}
                   {t.type === "CHECKOUT" && (t.checkoutType === "RESTOCK" ? "Truck restock" : "Job checkout")}
                   {t.type === "RETURN" && "Returned to warehouse"}
-                  {t.type === "ADJUSTMENT" && "Written off"}
+                  {t.type === "ADJUSTMENT" &&
+                    (t.toWarehouseId || t.fromWarehouseId ? "Warehouse count correction" : "Written off")}
                   {t.partUsage ? ` · Job ${t.partUsage.job.jobNumber}` : ""}
                 </p>
                 <p className="text-nexus-steel">
@@ -219,7 +223,7 @@ export default function PartDetailPage() {
               </div>
               <div className="text-right">
                 <p className="font-medium text-nexus-navy">
-                  {t.type === "RECEIVE" || t.type === "RETURN" ? "+" : "-"}
+                  {t.direction === "increase" ? "+" : "-"}
                   {t.quantity}
                 </p>
                 {t.justification && (

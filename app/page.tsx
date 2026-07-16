@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Boxes, Package, AlertTriangle, Download, ScanLine, Search } from "lucide-react";
+import { Boxes, Package, AlertTriangle, Download, ScanLine, Search, ClipboardEdit } from "lucide-react";
 import { canEditParts } from "@/lib/roles";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+const DEFAULT_WAREHOUSE_ID = process.env.NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID ?? "";
 
 type InventoryItem = {
   partId: string;
@@ -36,6 +38,13 @@ export default function InventoryHomePage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [showBulkTool, setShowBulkTool] = useState(false);
+
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  const [actualQty, setActualQty] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjustBusy, setAdjustBusy] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [adjustNotice, setAdjustNotice] = useState<string | null>(null);
 
   function load() {
     fetch("/api/inventory/warehouse")
@@ -90,6 +99,46 @@ export default function InventoryHomePage() {
       load();
     } else {
       setBulkMessage(typeof data.error === "string" ? data.error : "Couldn't apply.");
+    }
+  }
+
+  function openAdjust(item: InventoryItem) {
+    setAdjustingId(item.partId);
+    setActualQty(String(item.quantity));
+    setAdjustReason("");
+    setAdjustError(null);
+    setAdjustNotice(null);
+  }
+
+  async function submitAdjust(partId: string) {
+    setAdjustBusy(true);
+    setAdjustError(null);
+    try {
+      const res = await fetch("/api/inventory/warehouse-adjust", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partId,
+          warehouseId: DEFAULT_WAREHOUSE_ID,
+          actualQuantity: Number(actualQty),
+          reason: adjustReason,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setAdjustBusy(false);
+      if (!res.ok) {
+        setAdjustError(typeof data.error === "string" ? data.error : `That didn't go through (${res.status}).`);
+        return;
+      }
+      if (data.unchanged) {
+        setAdjustNotice(data.message);
+        return;
+      }
+      setAdjustingId(null);
+      load();
+    } catch {
+      setAdjustBusy(false);
+      setAdjustError("Couldn't reach the server — check your connection.");
     }
   }
 
@@ -240,8 +289,55 @@ export default function InventoryHomePage() {
                     </p>
                     {item.lowStock && <p className="text-xs text-nexus-danger">Low stock</p>}
                   </div>
+                  {editable && adjustingId !== item.partId && (
+                    <button
+                      onClick={() => openAdjust(item)}
+                      aria-label="Adjust count"
+                      className="text-nexus-steelfaint hover:text-nexus-navy"
+                    >
+                      <ClipboardEdit size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {adjustingId === item.partId && (
+                <div className="border-t-2 border-nexus-steel/10 bg-nexus-paper px-4 py-3">
+                  <p className="text-xs font-medium text-nexus-navy">Correct count for {item.name}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-xs text-nexus-steel">Actual count</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={actualQty}
+                      onChange={(e) => setActualQty(e.target.value)}
+                      className="w-20 rounded-lg border-2 border-nexus-line px-2 py-1 text-sm font-data"
+                    />
+                    <span className="text-xs text-nexus-steel">system says {item.quantity}</span>
+                  </div>
+                  <label className="mt-2 block text-xs text-nexus-steel">Reason (required)</label>
+                  <input
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    placeholder="e.g. physical count, found damaged stock"
+                    className="mt-1 w-full rounded-lg border-2 border-nexus-line px-2 py-1 text-sm"
+                  />
+                  {adjustError && <p className="mt-2 text-xs text-nexus-danger">{adjustError}</p>}
+                  {adjustNotice && <p className="mt-2 text-xs text-nexus-steel">{adjustNotice}</p>}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      onClick={() => submitAdjust(item.partId)}
+                      disabled={adjustBusy || actualQty === "" || !adjustReason}
+                      className="flex-1"
+                    >
+                      {adjustBusy ? "Saving…" : "Confirm"}
+                    </Button>
+                    <Button variant="secondary" onClick={() => setAdjustingId(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </Card>
           ))}
         </ul>

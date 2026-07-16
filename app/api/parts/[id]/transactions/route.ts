@@ -19,5 +19,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     take: 100,
   });
 
-  return NextResponse.json({ transactions });
+  // RECEIVE/RETURN always increase; CHECKOUT always decreases (from the
+  // warehouse's side, which is what this combined log frames everything
+  // around); ADJUSTMENT can go either way now that warehouse count
+  // corrections exist alongside truck write-offs, so it's read off which
+  // side of the transaction actually has a destination.
+  const withDirection = transactions.map((t) => {
+    let direction: "increase" | "decrease";
+    if (t.type === "RECEIVE" || t.type === "RETURN") direction = "increase";
+    else if (t.type === "CHECKOUT") direction = "decrease";
+    else direction = t.toWarehouseId || t.toTruckId ? "increase" : "decrease";
+    return { ...t, direction };
+  });
+
+  return NextResponse.json({ transactions: withDirection });
 }
