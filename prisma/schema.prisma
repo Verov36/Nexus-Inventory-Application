@@ -152,6 +152,7 @@ model InventoryTransaction {
   toTruckId       String?
   performedById   String
   performedBy     User             @relation("PerformedBy", fields: [performedById], references: [id])
+  notes           String?          // reason for a RETURN or ADJUSTMENT — why stock left the truck
   createdAt       DateTime         @default(now())
 
   partUsage       PartUsage?

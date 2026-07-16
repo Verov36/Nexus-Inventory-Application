@@ -26,6 +26,7 @@ type Transaction = {
   performedBy: { name: string };
   partUsage: { job: { jobNumber: string } } | null;
   justification: { status: string } | null;
+  notes: string | null;
 };
 
 export default function PartDetailPage() {
@@ -205,16 +206,20 @@ export default function PartDetailPage() {
             <li key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
               <div>
                 <p className="font-medium text-nexus-navy">
-                  {t.type === "RECEIVE" ? "Received" : t.checkoutType === "RESTOCK" ? "Truck restock" : "Job checkout"}
+                  {t.type === "RECEIVE" && "Received"}
+                  {t.type === "CHECKOUT" && (t.checkoutType === "RESTOCK" ? "Truck restock" : "Job checkout")}
+                  {t.type === "RETURN" && "Returned to warehouse"}
+                  {t.type === "ADJUSTMENT" && "Written off"}
                   {t.partUsage ? ` · Job ${t.partUsage.job.jobNumber}` : ""}
                 </p>
                 <p className="text-nexus-steel">
                   {t.performedBy.name} · {new Date(t.createdAt).toLocaleString()}
                 </p>
+                {t.notes && <p className="mt-0.5 text-xs italic text-nexus-steel">{t.notes}</p>}
               </div>
               <div className="text-right">
                 <p className="font-medium text-nexus-navy">
-                  {t.type === "RECEIVE" ? "+" : "-"}
+                  {t.type === "RECEIVE" || t.type === "RETURN" ? "+" : "-"}
                   {t.quantity}
                 </p>
                 {t.justification && (
