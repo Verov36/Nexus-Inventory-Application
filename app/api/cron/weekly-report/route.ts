@@ -15,11 +15,18 @@ import { generateUsageSummary } from "@/lib/reports";
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-    }
+  if (!secret) {
+    // Fail closed, not open — an unset secret should never mean "anyone can
+    // trigger this," it should mean "this feature isn't configured yet."
+    console.error("CRON_SECRET is not set — refusing to run the scheduled report.");
+    return NextResponse.json(
+      { error: "CRON_SECRET is not configured on this deployment." },
+      { status: 500 }
+    );
+  }
+  const authHeader = req.headers.get("authorization");
+  if (authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   }
 
   const schedule = await prisma.reportSchedule.findFirst();

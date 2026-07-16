@@ -2,14 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import {
-  adjustTruckStock,
-  adjustWarehouseStock,
-  findOrCreateJob,
-  getApplicableLimit,
-  getTruckStock,
-  getWarehouseStock,
-} from "@/lib/inventory";
+import { adjustTruckStock, adjustWarehouseStock, findOrCreateJob, getApplicableLimit, getTruckStock, getWarehouseStock } from "@/lib/inventory";
+import { canCheckoutToTruck } from "@/lib/roles";
 
 const checkoutSchema = z
   .object({
@@ -36,6 +30,12 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  if (!canCheckoutToTruck((session.user as { role?: string }).role)) {
+    return NextResponse.json(
+      { error: "Only a truck tech (or admin) can check parts out to a truck." },
+      { status: 403 }
+    );
   }
   const userId = session.user.id;
 

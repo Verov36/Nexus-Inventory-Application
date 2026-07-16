@@ -2,8 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+import { auth } from "@/lib/auth";
+import { canManageTrucksAndLimits } from "@/lib/roles";
+
 export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  const role = (session.user as { role?: string }).role;
+
+  // A truck tech only ever sees their own assigned truck — everyone else
+  // (managers, admins, warehouse roles) sees the full fleet.
+  const where = role === "TRUCK_TECH" ? { techId: session.user.id } : undefined;
+
   const trucks = await prisma.truck.findMany({
+    where,
     include: {
       tech: { select: { id: true, name: true, email: true } },
       stockLevels: { include: { part: true } },
@@ -51,6 +68,10 @@ export async function GET() {
 const createTruckSchema = z.object({ label: z.string().min(1) });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
+    return NextResponse.json({ error: "Only a manager or admin can add trucks" }, { status: 403 });
+  }
   const parsed = createTruckSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });

@@ -15,6 +15,10 @@ const limitSchema = z
   });
 
 export async function GET(_req: NextRequest, { params }: { params: { truckId: string } }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
   const limits = await prisma.truckStockLimit.findMany({
     where: { truckId: params.truckId },
     include: { part: true },

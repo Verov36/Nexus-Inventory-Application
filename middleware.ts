@@ -6,6 +6,13 @@ export default auth((req) => {
   const path = req.nextUrl.pathname;
   const isLoginPage = path.startsWith("/login");
   const isAuthApi = path.startsWith("/api/auth");
+  const isCronApi = path.startsWith("/api/cron");
+
+  // The cron endpoint is called by an external scheduler (Railway Cron),
+  // which has no browser session — it authenticates itself via CRON_SECRET
+  // inside the route instead. Without this exclusion, every cron trigger
+  // would get redirected to /login before ever reaching the handler.
+  if (isCronApi) return;
 
   if (!isLoggedIn && !isLoginPage && !isAuthApi) {
     const loginUrl = new URL("/login", req.url);

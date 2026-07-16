@@ -12,9 +12,11 @@ type Truck = {
 };
 
 type PartOption = { id: string; sku: string; name: string; category: string | null };
+type TechOption = { id: string; name: string; truck: { id: string; label: string } | null };
 
 export default function ManagerTrucksPage() {
   const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [techs, setTechs] = useState<TechOption[]>([]);
   const [newTruckLabel, setNewTruckLabel] = useState("");
   const [limitForm, setLimitForm] = useState<
     Record<string, { query: string; results: PartOption[]; selected: PartOption | null; maxQty: string }>
@@ -23,6 +25,7 @@ export default function ManagerTrucksPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
   const [savingLimitFor, setSavingLimitFor] = useState<string | null>(null);
+  const [assigningFor, setAssigningFor] = useState<string | null>(null);
 
   async function loadTrucks() {
     const res = await fetch("/api/trucks");
@@ -30,8 +33,17 @@ export default function ManagerTrucksPage() {
     setTrucks(data.trucks ?? []);
   }
 
+  async function loadTechs() {
+    const res = await fetch("/api/users/techs");
+    if (res.ok) {
+      const data = await res.json();
+      setTechs(data.techs ?? []);
+    }
+  }
+
   useEffect(() => {
     loadTrucks();
+    loadTechs();
   }, []);
 
   async function createTruck() {
@@ -43,6 +55,26 @@ export default function ManagerTrucksPage() {
     });
     setNewTruckLabel("");
     loadTrucks();
+  }
+
+  async function assignTech(truckId: string, techId: string) {
+    setError(null);
+    setNotice(null);
+    setAssigningFor(truckId);
+    const res = await fetch(`/api/trucks/${truckId}/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ techId: techId || null }),
+    });
+    setAssigningFor(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(typeof data.error === "string" ? data.error : `Couldn't assign that tech (${res.status}).`);
+      return;
+    }
+    setNotice(techId ? "Tech assigned." : "Tech unassigned.");
+    loadTrucks();
+    loadTechs();
   }
 
   function getForm(truckId: string) {
@@ -166,10 +198,30 @@ export default function ManagerTrucksPage() {
                 <p className="text-lg font-medium text-nexus-navy">
                   {truck.label} {!truck.active && <span className="text-sm text-nexus-steel">(deactivated)</span>}
                 </p>
-                <p className="text-sm text-nexus-steel">
-                  {truck.tech ? `Assigned: ${truck.tech.name}` : "Unassigned"}
-                </p>
               </div>
+
+              {truck.active && (
+                <div className="mt-2">
+                  <label className="text-xs uppercase tracking-wide text-nexus-steel">Assigned tech</label>
+                  <select
+                    value={truck.tech?.id ?? ""}
+                    onChange={(e) => assignTech(truck.id, e.target.value)}
+                    disabled={assigningFor === truck.id}
+                    className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-steel/30 px-3 text-sm disabled:opacity-50"
+                  >
+                    <option value="">Unassigned</option>
+                    {techs.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                        {t.truck && t.truck.id !== truck.id ? ` (currently on ${t.truck.label})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-nexus-steel">
+                    Picking a tech already on another truck moves them here and frees up their old truck.
+                  </p>
+                </div>
+              )}
 
               {truck.stockLevels.length > 0 && (
                 <ul className="mt-3 divide-y divide-nexus-steel/10 text-sm">
