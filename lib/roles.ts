@@ -73,18 +73,7 @@ export function canViewWarehouseInventory(role?: string | null) {
 export function canViewFleet(role?: string | null) {
   return role !== "WAREHOUSE_MANAGER" && role !== "WAREHOUSE_EMPLOYEE";
 }
-// A truck tech's world is their own truck — the warehouse-wide stock list
-// (quantities, values, every part in the building) isn't their domain.
-export function canViewWarehouseInventory(role?: string | null) {
-  return role !== "TRUCK_TECH";
-}
 
-// The flip side: warehouse-only roles shouldn't see the truck fleet at all —
-// that's a manager/admin domain, same boundary as canManageTrucksAndLimits
-// but for read access too, not just control.
-export function canViewFleet(role?: string | null) {
-  return role !== "WAREHOUSE_MANAGER" && role !== "WAREHOUSE_EMPLOYEE";
-}
 export function isSuperAdmin(role?: string | null) {
   return role === "SUPER_ADMIN";
 }
