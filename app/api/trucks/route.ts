@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { canManageTrucksAndLimits } from "@/lib/roles";
+import { canManageTrucksAndLimits, canViewFleet } from "@/lib/roles";
 
 export async function GET() {
   const session = await auth();
@@ -10,6 +10,9 @@ export async function GET() {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
   const role = (session.user as { role?: string }).role;
+  if (!canViewFleet(role)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   // A truck tech only ever sees their own assigned truck — everyone else
   // (managers, admins, warehouse roles) sees the full fleet.
@@ -25,28 +28,44 @@ export async function GET() {
     orderBy: { label: "asc" },
   });
 
-  // Reconstruct how much of each truck's current stock came from job-use
-  // checkouts vs. general restocking. The running StockLevel.quantity is
-  // just one merged total (both checkout types add to it the same way), so
-  // this is derived from the transaction history rather than stored
-  // directly — every checkout already records its type, so this is exact,
-  // not an estimate.
+  // Reconstruct how much of each truck's current stock is job-designated
+  // vs. general restock. Checkouts add to one bucket or the other; returns
+  // and write-offs remove stock but were never subtracted from either
+  // bucket before, so the breakdown could show stock that had already left
+  // the truck. Removals come off the restock bucket first (general reserve
+  // is the more natural thing to hand back or write off), then spill into
+  // the job bucket if there's more removed than was ever restocked — that
+  // guarantees job + restock always equals the truck's real current total.
   const truckIds = trucks.map((t) => t.id);
-  const breakdown =
-    truckIds.length > 0
-      ? await prisma.inventoryTransaction.groupBy({
-          by: ["toTruckId", "partId", "checkoutType"],
-          where: { type: "CHECKOUT", toTruckId: { in: truckIds } },
-          _sum: { quantity: true },
-        })
-      : [];
+  const [checkoutRows, removalRows] = await Promise.all([
+    prisma.inventoryTransaction.groupBy({
+      by: ["toTruckId", "partId", "checkoutType"],
+      where: { type: "CHECKOUT", toTruckId: { in: truckIds } },
+      _sum: { quantity: true },
+    }),
+    prisma.inventoryTransaction.groupBy({
+      by: ["fromTruckId", "partId"],
+      where: { type: { in: ["RETURN", "ADJUSTMENT"] }, fromTruckId: { in: truckIds } },
+      _sum: { quantity: true },
+    }),
+  ]);
 
   const breakdownMap = new Map<string, { job: number; restock: number }>();
-  for (const row of breakdown) {
+  for (const row of checkoutRows) {
     const key = `${row.toTruckId}|${row.partId}`;
     const entry = breakdownMap.get(key) ?? { job: 0, restock: 0 };
     if (row.checkoutType === "JOB_USE") entry.job += row._sum.quantity ?? 0;
     if (row.checkoutType === "RESTOCK") entry.restock += row._sum.quantity ?? 0;
+    breakdownMap.set(key, entry);
+  }
+  for (const row of removalRows) {
+    const key = `${row.fromTruckId}|${row.partId}`;
+    const entry = breakdownMap.get(key) ?? { job: 0, restock: 0 };
+    let removed = row._sum.quantity ?? 0;
+    const fromRestock = Math.min(entry.restock, removed);
+    entry.restock -= fromRestock;
+    removed -= fromRestock;
+    entry.job = Math.max(0, entry.job - removed);
     breakdownMap.set(key, entry);
   }
 
