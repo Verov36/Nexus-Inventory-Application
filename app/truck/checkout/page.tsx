@@ -15,9 +15,10 @@ const REMEMBERED_TRUCK_KEY = "nexus-inventory:selected-truck-id";
 
 export default function TruckCheckoutPage() {
   const [trucks, setTrucks] = useState<TruckOption[]>([]);
+  const [trucksLoaded, setTrucksLoaded] = useState(false);
   const [truckId, setTruckId] = useState("");
   const [part, setPart] = useState<Part | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState("1");
   const [checkoutType, setCheckoutType] = useState<"JOB_USE" | "RESTOCK">("JOB_USE");
   const [jobNumber, setJobNumber] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -31,24 +32,41 @@ export default function TruckCheckoutPage() {
   const [relatedJobNumbers, setRelatedJobNumbers] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const qty = Number(quantity);
+  const qtyValid = Number.isInteger(qty) && qty >= 1;
+
   useEffect(() => {
     fetch("/api/trucks")
       .then((r) => (r.ok ? r.json() : { trucks: [] }))
       .then((d) => {
         const active: TruckOption[] = (d.trucks ?? []).filter((t: { active: boolean }) => t.active);
         setTrucks(active);
-        const remembered = localStorage.getItem(REMEMBERED_TRUCK_KEY);
+        let remembered: string | null = null;
+        try {
+          remembered = localStorage.getItem(REMEMBERED_TRUCK_KEY);
+        } catch {
+          /* private mode / storage blocked */
+        }
         if (remembered && active.some((t) => t.id === remembered)) {
           setTruckId(remembered);
         } else if (active.length === 1) {
           setTruckId(active[0].id);
         }
-      });
+      })
+      .catch(() => {
+        setStatusTone("error");
+        setStatus("Couldn't load the truck list — check your connection and reload.");
+      })
+      .finally(() => setTrucksLoaded(true));
   }, []);
 
   function handleTruckChange(id: string) {
     setTruckId(id);
-    if (id) localStorage.setItem(REMEMBERED_TRUCK_KEY, id);
+    try {
+      if (id) localStorage.setItem(REMEMBERED_TRUCK_KEY, id);
+    } catch {
+      /* ignore */
+    }
   }
 
   async function handleScan(barcode: string) {
@@ -56,13 +74,17 @@ export default function TruckCheckoutPage() {
     setNeedsJustification(null);
     try {
       const res = await fetch(`/api/parts?barcode=${encodeURIComponent(barcode)}`);
-      const data = await res.json();
-      if (data.part) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.part) {
         setPart(data.part);
       } else {
         setPart(null);
         setStatusTone("error");
-        setStatus("No part matches that barcode. Check with the warehouse.");
+        setStatus(
+          typeof data.error === "string" && !res.ok
+            ? data.error
+            : "No part matches that barcode. Check with the warehouse."
+        );
       }
     } catch {
       setStatusTone("error");
@@ -71,21 +93,21 @@ export default function TruckCheckoutPage() {
   }
 
   async function submitCheckout(withJustification = false) {
-    if (!part || !truckId) return;
+    if (!part || !truckId || !qtyValid) return;
     setBusy(true);
     setStatus(null);
 
     const body: Record<string, unknown> = {
       partId: part.id,
       truckId,
-      warehouseId: DEFAULT_WAREHOUSE_ID,
-      quantity,
+      warehouseId: DEFAULT_WAREHOUSE_ID || undefined,
+      quantity: qty,
       checkoutType,
-      jobNumber: checkoutType === "JOB_USE" ? jobNumber : undefined,
+      jobNumber: checkoutType === "JOB_USE" ? jobNumber.trim() : undefined,
     };
     if (withJustification) {
       body.justification = {
-        explanation,
+        explanation: explanation.trim(),
         relatedJobNumbers: relatedJobNumbers.split(",").map((s) => s.trim()).filter(Boolean),
       };
     }
@@ -129,7 +151,7 @@ export default function TruckCheckoutPage() {
       }
 
       setStatusTone("success");
-      setStatus(`Checked out ${quantity} × ${part.name}.`);
+      setStatus(`Checked out ${qty} × ${part.name}.`);
       reset();
     } catch {
       setBusy(false);
@@ -140,7 +162,7 @@ export default function TruckCheckoutPage() {
 
   function reset() {
     setPart(null);
-    setQuantity(1);
+    setQuantity("1");
     setJobNumber("");
     setNeedsJustification(null);
     setExplanation("");
@@ -163,9 +185,9 @@ export default function TruckCheckoutPage() {
           </option>
         ))}
       </select>
-      {trucks.length === 0 && (
+      {trucksLoaded && trucks.length === 0 && (
         <p className="mt-2 text-sm text-nexus-steel">
-          No active trucks yet — a manager needs to add one at Manage trucks first.
+          No truck is assigned to you yet — a manager needs to add one and assign you to it under Manage trucks.
         </p>
       )}
 
@@ -220,17 +242,22 @@ export default function TruckCheckoutPage() {
           <input
             type="number"
             min={1}
+            step={1}
+            inputMode="numeric"
             value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+            onChange={(e) => setQuantity(e.target.value)}
+            onBlur={() => {
+              if (!qtyValid) setQuantity("1");
+            }}
             className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-line px-4 font-data text-lg"
           />
 
           <Button
             onClick={() => submitCheckout(false)}
-            disabled={busy || !truckId || (checkoutType === "JOB_USE" && !jobNumber)}
+            disabled={busy || !truckId || !qtyValid || (checkoutType === "JOB_USE" && !jobNumber.trim())}
             className="mt-4 w-full"
           >
-            Check out to truck
+            {busy ? "Checking out…" : "Check out to truck"}
           </Button>
           {!truckId && <p className="mt-2 text-sm text-nexus-warn">Select your truck above first.</p>}
         </Card>
@@ -244,7 +271,7 @@ export default function TruckCheckoutPage() {
           <p className="mt-1 text-sm text-nexus-steel">{needsJustification.message}</p>
 
           <label className="mt-4 block text-sm text-nexus-steel">
-            Why is the truck carrying this much? What's it accounted for on?
+            Why is the truck carrying this much? What&apos;s it accounted for on?
           </label>
           <textarea
             value={explanation}
@@ -265,11 +292,11 @@ export default function TruckCheckoutPage() {
           <div className="mt-4 flex gap-2">
             <Button
               onClick={() => submitCheckout(true)}
-              disabled={busy || !explanation || !relatedJobNumbers}
+              disabled={busy || !explanation.trim() || !relatedJobNumbers.trim()}
               className="flex-1 !bg-nexus-warn hover:!bg-nexus-warn/90"
               icon={<Send size={16} />}
             >
-              Submit and check out
+              {busy ? "Submitting…" : "Submit and check out"}
             </Button>
             <Button onClick={reset} variant="secondary" icon={<X size={16} />}>
               Cancel

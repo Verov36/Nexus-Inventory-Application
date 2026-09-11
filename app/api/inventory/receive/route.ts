@@ -3,11 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canReceiveWarehouseStock } from "@/lib/roles";
-import { adjustWarehouseStock } from "@/lib/inventory";
+import { adjustWarehouseStock, resolveWarehouseId } from "@/lib/inventory";
 
 const receiveSchema = z.object({
   partId: z.string().min(1),
-  warehouseId: z.string().min(1),
+  warehouseId: z.string().optional().nullable(),
   quantity: z.number().int().positive(),
 });
 
@@ -37,27 +37,32 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
   const parsed = receiveSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { partId, warehouseId, quantity } = parsed.data;
+  const { partId, quantity } = parsed.data;
 
   const part = await prisma.part.findUnique({ where: { id: partId } });
   if (!part) {
     return NextResponse.json({ error: "Part not found" }, { status: 404 });
   }
-  const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
-  if (!warehouse) {
-    return NextResponse.json({ error: "Warehouse not found — check NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID" }, { status: 404 });
+  const warehouseId = await resolveWarehouseId(parsed.data.warehouseId);
+  if (!warehouseId) {
+    return NextResponse.json(
+      { error: "No warehouse is configured yet — run the seed or set NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID." },
+      { status: 404 }
+    );
   }
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // find-then-create-or-update, same safe pattern used by checkout and
-      // the mass import — avoids relying on Postgres to detect a "conflict"
-      // on a NULL truckId, which a plain unique constraint never does.
       const stockLevel = await adjustWarehouseStock(tx, partId, warehouseId, quantity);
 
       const transaction = await tx.inventoryTransaction.create({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canRunReports } from "@/lib/roles";
+import { findApplicableLimit } from "@/lib/limits";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -16,9 +17,10 @@ export async function GET(req: NextRequest) {
       orderBy: { part: { name: "asc" } },
     }),
     prisma.truck.findMany({
+      where: { active: true },
       include: {
         tech: { select: { name: true } },
-        stockLevels: { include: { part: true }, orderBy: { part: { name: "asc" } } },
+        stockLevels: { where: { quantity: { gt: 0 } }, include: { part: true }, orderBy: { part: { name: "asc" } } },
         stockLimits: { include: { part: true } },
       },
       orderBy: { label: "asc" },
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest) {
     label: truck.label,
     tech: truck.tech?.name ?? null,
     items: truck.stockLevels.map((sl) => {
-      const limit = truck.stockLimits.find((l) => l.part?.id === sl.part.id);
+      const limit = findApplicableLimit(truck.stockLimits, sl.part);
       return {
         partId: sl.part.id,
         sku: sl.part.sku,

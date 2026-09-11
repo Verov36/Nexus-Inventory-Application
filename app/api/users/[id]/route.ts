@@ -6,8 +6,8 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 
 const updateSchema = z.object({
-  name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
+  name: z.string().trim().min(1).optional(),
+  email: z.string().trim().toLowerCase().email().optional(),
   password: z.string().min(8).optional(),
   role: z.enum(ROLES).optional(),
   canReceiveParts: z.boolean().optional(),
@@ -20,7 +20,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const parsed = updateSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -119,10 +125,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data.canReceiveParts = canReceiveParts;
   }
 
-  const user = await prisma.user.update({
-    where: { id: params.id },
-    data,
-    select: { id: true, name: true, email: true, role: true, canReceiveParts: true, createdAt: true },
+  const user = await prisma.$transaction(async (tx) => {
+    // A user who stops being a Truck Tech shouldn't stay attached to a truck —
+    // otherwise the truck looks "assigned" to someone who can no longer check
+    // parts out to it, and no tech can be put on it without a manual unassign.
+    if (role !== undefined && role !== "TRUCK_TECH" && target.role === "TRUCK_TECH") {
+      await tx.truck.updateMany({ where: { techId: target.id }, data: { techId: null } });
+    }
+    return tx.user.update({
+      where: { id: params.id },
+      data,
+      select: { id: true, name: true, email: true, role: true, canReceiveParts: true, createdAt: true },
+    });
   });
   return NextResponse.json({ user });
 }

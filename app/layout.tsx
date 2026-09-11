@@ -1,6 +1,5 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { Manrope, Inter, IBM_Plex_Mono } from "next/font/google";
 import Providers from "./providers";
 import AppShell from "@/components/AppShell";
@@ -45,12 +44,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${display.variable} ${body.variable} ${data.variable}`}>
       <body>
         {/*
-          Zebra Browser Print SDK — download from zebra.com/browserprint and
-          place the file at public/browserprint/BrowserPrint-3.1.min.js.
-          It talks to the local Browser Print app (http://localhost:9100)
-          running on whichever machine has the Zebra printer attached.
+          The Zebra Browser Print SDK (public/browserprint/BrowserPrint-3.1.min.js,
+          not committed) is loaded on demand by lib/zebra-print.ts the first
+          time someone prints, so a deployment without the file doesn't 404 on
+          every page load.
         */}
-        <Script src="/browserprint/BrowserPrint-3.1.min.js" strategy="beforeInteractive" />
         <ServiceWorkerRegister />
         <Providers>
           <AppShell>{children}</AppShell>

@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Boxes, Package, AlertTriangle, Download, ScanLine, Search, ClipboardEdit } from "lucide-react";
-import { canEditParts } from "@/lib/roles";
+import { canEditParts, canReceiveWarehouseStock, canViewWarehouseInventory } from "@/lib/roles";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -24,14 +25,24 @@ type InventoryItem = {
 };
 
 export default function InventoryHomePage() {
+  const router = useRouter();
   const { data: session } = useSession();
-  const role = (session?.user as { role?: string } | undefined)?.role;
+  const role = (session?.user as { role?: string; canReceiveParts?: boolean } | undefined)?.role;
+  const canReceiveParts = (session?.user as { canReceiveParts?: boolean } | undefined)?.canReceiveParts;
   const editable = canEditParts(role);
+  const canReceive = canReceiveWarehouseStock(role, canReceiveParts);
+
+  // A truck tech's home is the checkout screen, not the warehouse-wide
+  // stock list (which the API refuses them anyway).
+  useEffect(() => {
+    if (role && !canViewWarehouseInventory(role)) router.replace("/truck/checkout");
+  }, [role, router]);
 
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState("");
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingThresholdId, setEditingThresholdId] = useState<string | null>(null);
   const [thresholdValue, setThresholdValue] = useState("");
   const [bulkPercent, setBulkPercent] = useState("20");
@@ -47,9 +58,19 @@ export default function InventoryHomePage() {
   const [adjustNotice, setAdjustNotice] = useState<string | null>(null);
 
   function load() {
+    setLoadError(null);
     fetch("/api/inventory/warehouse")
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => setItems(d.items ?? []))
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (r.status !== 403) {
+            setLoadError(typeof d.error === "string" ? d.error : `Couldn't load inventory (${r.status}).`);
+          }
+          return;
+        }
+        setItems(d.items ?? []);
+      })
+      .catch(() => setLoadError("Couldn't reach the server — check your connection."))
       .finally(() => setLoading(false));
   }
 
@@ -75,11 +96,21 @@ export default function InventoryHomePage() {
   const zeroThresholdCount = items.filter((i) => i.reorderThreshold === 0).length;
 
   async function saveThreshold(partId: string) {
-    await fetch(`/api/parts/${partId}`, {
+    const value = Number(thresholdValue);
+    if (!Number.isInteger(value) || value < 0) {
+      setLoadError("Reorder point must be a whole number of 0 or more.");
+      return;
+    }
+    const res = await fetch(`/api/parts/${partId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reorderThreshold: Number(thresholdValue) }),
+      body: JSON.stringify({ reorderThreshold: value }),
     });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setLoadError(typeof d.error === "string" ? d.error : `Couldn't save the reorder point (${res.status}).`);
+      return;
+    }
     setEditingThresholdId(null);
     load();
   }
@@ -154,12 +185,20 @@ export default function InventoryHomePage() {
                 {lowStockOnly ? "Export low stock" : "Export"}
               </Button>
             </a>
-            <Link href="/warehouse/receiving">
-              <Button icon={<ScanLine size={16} />}>Receive parts</Button>
-            </Link>
+            {canReceive && (
+              <Link href="/warehouse/receiving">
+                <Button icon={<ScanLine size={16} />}>Receive parts</Button>
+              </Link>
+            )}
           </>
         }
       />
+
+      {loadError && (
+        <Card accent="danger" className="mt-4 p-3">
+          <p className="text-sm text-nexus-danger">{loadError}</p>
+        </Card>
+      )}
 
       <div className="mt-5 grid grid-cols-3 gap-3">
         <StatCard icon={<Package size={18} />} label="Parts tracked" value={items.length} />
@@ -231,7 +270,7 @@ export default function InventoryHomePage() {
                 : "Try a different name, SKU, or category."
             }
             action={
-              items.length === 0 ? (
+              items.length === 0 && canReceive ? (
                 <Link href="/warehouse/receiving">
                   <Button icon={<ScanLine size={16} />}>Receive parts</Button>
                 </Link>
@@ -309,6 +348,8 @@ export default function InventoryHomePage() {
                     <input
                       type="number"
                       min={0}
+                      step={1}
+                      inputMode="numeric"
                       value={actualQty}
                       onChange={(e) => setActualQty(e.target.value)}
                       className="w-20 rounded-lg border-2 border-nexus-line px-2 py-1 text-sm font-data"
@@ -327,7 +368,13 @@ export default function InventoryHomePage() {
                   <div className="mt-3 flex gap-2">
                     <Button
                       onClick={() => submitAdjust(item.partId)}
-                      disabled={adjustBusy || actualQty === "" || !adjustReason}
+                      disabled={
+                        adjustBusy ||
+                        actualQty === "" ||
+                        !Number.isInteger(Number(actualQty)) ||
+                        Number(actualQty) < 0 ||
+                        !adjustReason.trim()
+                      }
                       className="flex-1"
                     >
                       {adjustBusy ? "Saving…" : "Confirm"}

@@ -23,8 +23,8 @@ type ReceivedEntry = {
   at: string;
 };
 
-// TODO: replace with the signed-in org's actual warehouse id once
-// multi-warehouse support / org context is wired in.
+// Sent along as a hint; the server falls back to its own default warehouse
+// if this wasn't baked into the client bundle at build time.
 const DEFAULT_WAREHOUSE_ID = process.env.NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID ?? "";
 
 /** Reads a fetch Response as JSON, tolerating a non-JSON body (raw 500 page,
@@ -41,15 +41,19 @@ export default function ReceivingPage() {
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [matchedPart, setMatchedPart] = useState<Part | null>(null);
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "not_found">("idle");
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState("1");
   const [newPart, setNewPart] = useState({ sku: "", name: "", category: "" });
   const [log, setLog] = useState<ReceivedEntry[]>([]);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const qty = Number(quantity);
+  const qtyValid = Number.isInteger(qty) && qty >= 1;
+
   async function handleScan(barcode: string) {
     setScannedBarcode(barcode);
+    setMatchedPart(null);
     setLookupState("loading");
     setPrintStatus(null);
     setError(null);
@@ -84,9 +88,9 @@ export default function ReceivingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sku: newPart.sku,
-          name: newPart.name,
-          category: newPart.category || undefined,
+          sku: newPart.sku.trim(),
+          name: newPart.name.trim(),
+          category: newPart.category.trim() || undefined,
           barcodeValue: scannedBarcode,
         }),
       });
@@ -105,11 +109,7 @@ export default function ReceivingPage() {
   }
 
   async function receivePart() {
-    if (!matchedPart) return;
-    if (!DEFAULT_WAREHOUSE_ID) {
-      setError("No warehouse configured — a manager needs to set NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID.");
-      return;
-    }
+    if (!matchedPart || !qtyValid) return;
     setBusy(true);
     setError(null);
     try {
@@ -118,14 +118,14 @@ export default function ReceivingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           partId: matchedPart.id,
-          warehouseId: DEFAULT_WAREHOUSE_ID,
-          quantity,
+          warehouseId: DEFAULT_WAREHOUSE_ID || undefined,
+          quantity: qty,
         }),
       });
       setBusy(false);
       const data = await safeJson(res);
       if (res.ok) {
-        setLog((prev) => [{ part: matchedPart, quantity, at: new Date().toLocaleTimeString() }, ...prev]);
+        setLog((prev) => [{ part: matchedPart, quantity: qty, at: new Date().toLocaleTimeString() }, ...prev]);
         resetScan();
       } else {
         setError(
@@ -151,7 +151,7 @@ export default function ReceivingPage() {
           barcodeValue: matchedPart.barcodeValue,
           category: matchedPart.category,
         },
-        quantity > 1 ? quantity : 1
+        qtyValid && qty > 1 ? qty : 1
       );
       setPrintStatus("Sent to printer");
     } catch (err) {
@@ -163,7 +163,7 @@ export default function ReceivingPage() {
     setScannedBarcode(null);
     setMatchedPart(null);
     setLookupState("idle");
-    setQuantity(1);
+    setQuantity("1");
     setPrintStatus(null);
   }
 
@@ -208,10 +208,10 @@ export default function ReceivingPage() {
             />
             <Button
               onClick={createPartFromScan}
-              disabled={busy || !newPart.sku || !newPart.name}
+              disabled={busy || !newPart.sku.trim() || !newPart.name.trim()}
               icon={<PackagePlus size={16} />}
             >
-              Add to catalog
+              {busy ? "Adding…" : "Add to catalog"}
             </Button>
           </div>
         </Card>
@@ -227,17 +227,22 @@ export default function ReceivingPage() {
           <input
             type="number"
             min={1}
+            step={1}
+            inputMode="numeric"
             value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+            onChange={(e) => setQuantity(e.target.value)}
+            onBlur={() => {
+              if (!qtyValid) setQuantity("1");
+            }}
             className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-line px-4 font-data text-lg"
           />
 
           <div className="mt-4 flex flex-wrap gap-3">
-            <Button onClick={receivePart} disabled={busy} icon={<CheckCircle2 size={16} />} className="flex-1">
+            <Button onClick={receivePart} disabled={busy || !qtyValid} icon={<CheckCircle2 size={16} />} className="flex-1">
               {busy ? "Saving…" : "Check into stock"}
             </Button>
             <Button onClick={handlePrint} variant="secondary" icon={<Printer size={16} />}>
-              Print {quantity > 1 ? `(${quantity})` : "label"}
+              Print {qtyValid && qty > 1 ? `(${qty})` : "label"}
             </Button>
           </div>
           {printStatus && <p className="mt-2 text-sm text-nexus-steel">{printStatus}</p>}

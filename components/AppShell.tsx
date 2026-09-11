@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -19,83 +19,79 @@ import {
   LogOut,
   type LucideIcon,
 } from "lucide-react";
-import { ROLE_LABELS } from "@/lib/roles";
+import {
+  ROLE_LABELS,
+  canCheckoutToTruck,
+  canManageTrucksAndLimits,
+  canManageUsers,
+  canReceiveWarehouseStock,
+  canReviewJustifications,
+  canRunReports,
+  canViewFleet,
+  canViewWarehouseInventory,
+  isSuperAdmin,
+} from "@/lib/roles";
 
 type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  roles?: string[];
-  extraCheck?: (role?: string, canReceiveParts?: boolean) => boolean;
+  visible: (role?: string, canReceiveParts?: boolean) => boolean;
 };
 
+// Visibility mirrors the server-side checks in lib/roles.ts and the API
+// routes one-for-one, so nobody sees a link to a screen whose data call
+// would just come back 403.
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Inventory", icon: Boxes },
+  { href: "/", label: "Inventory", icon: Boxes, visible: (role) => canViewWarehouseInventory(role) },
   {
     href: "/warehouse/receiving",
     label: "Receiving",
     icon: ScanLine,
-    extraCheck: (role, canReceiveParts) => role === "SUPER_ADMIN" || !!canReceiveParts,
+    visible: (role, canReceiveParts) => canReceiveWarehouseStock(role, canReceiveParts),
   },
-  {
-    href: "/truck/checkout",
-    label: "Truck checkout",
-    icon: Truck,
-    roles: ["SUPER_ADMIN", "ADMIN", "TRUCK_TECH"],
-  },
-  { href: "/truck/inventory", label: "Truck inventory", icon: ClipboardList },
-  {
-    href: "/manager/trucks",
-    label: "Manage trucks",
-    icon: Truck,
-    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"],
-  },
+  { href: "/truck/checkout", label: "Truck checkout", icon: Truck, visible: (role) => canCheckoutToTruck(role) },
+  { href: "/truck/inventory", label: "Truck inventory", icon: ClipboardList, visible: (role) => canViewFleet(role) },
+  { href: "/manager/trucks", label: "Manage trucks", icon: Truck, visible: (role) => canManageTrucksAndLimits(role) },
   {
     href: "/manager/justifications",
     label: "Overage justifications",
     icon: AlertTriangle,
-    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"],
+    visible: (role) => canReviewJustifications(role),
   },
-  {
-    href: "/manager/reports",
-    label: "Usage reports",
-    icon: BarChart3,
-    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "WAREHOUSE_MANAGER"],
-  },
-  {
-    href: "/manager/audit",
-    label: "Inventory audit",
-    icon: ShieldCheck,
-    roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "WAREHOUSE_MANAGER"],
-  },
-  {
-    href: "/admin/users",
-    label: "Users & permissions",
-    icon: Users,
-    roles: ["SUPER_ADMIN", "ADMIN"],
-  },
-  {
-    href: "/admin/import",
-    label: "Mass import",
-    icon: Upload,
-    roles: ["SUPER_ADMIN"],
-  },
+  { href: "/manager/reports", label: "Usage reports", icon: BarChart3, visible: (role) => canRunReports(role) },
+  { href: "/manager/audit", label: "Inventory audit", icon: ShieldCheck, visible: (role) => canRunReports(role) },
+  { href: "/admin/users", label: "Users & permissions", icon: Users, visible: (role) => canManageUsers(role) },
+  { href: "/admin/import", label: "Mass import", icon: Upload, visible: (role) => isSuperAdmin(role) },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
+  const { data: session, status, update } = useSession();
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const refreshed = useRef(false);
+
+  // Pull the latest role/receiving flag from the database once per page
+  // load (and whenever the tab comes back into focus), so a permission
+  // change an admin just made shows up without the user signing out.
+  useEffect(() => {
+    if (status !== "authenticated" || refreshed.current) return;
+    refreshed.current = true;
+    update().catch(() => {});
+    const onVisible = () => {
+      if (document.visibilityState === "visible") update().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   if (pathname === "/login") return <>{children}</>;
 
   const role = (session?.user as { role?: string; canReceiveParts?: boolean } | undefined)?.role;
   const canReceiveParts = (session?.user as { canReceiveParts?: boolean } | undefined)?.canReceiveParts;
   const userName = (session?.user as { name?: string } | undefined)?.name;
-  const visibleItems = NAV_ITEMS.filter((item) => {
-    if (item.extraCheck) return item.extraCheck(role, canReceiveParts);
-    return !item.roles || (role && item.roles.includes(role));
-  });
+  const visibleItems = role ? NAV_ITEMS.filter((item) => item.visible(role, canReceiveParts)) : [];
 
   return (
     <div className="min-h-screen bg-nexus-paper md:flex">
@@ -153,7 +149,7 @@ function SidebarLinks({
   return (
     <nav className="mt-6 flex flex-1 flex-col gap-0.5">
       {items.map((item) => {
-        const active = pathname === item.href;
+        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
         const Icon = item.icon;
         return (
           <Link

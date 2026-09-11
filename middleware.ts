@@ -7,6 +7,7 @@ export default auth((req) => {
   const isLoginPage = path.startsWith("/login");
   const isAuthApi = path.startsWith("/api/auth");
   const isCronApi = path.startsWith("/api/cron");
+  const isApi = path.startsWith("/api/");
 
   // The cron endpoint is called by an external scheduler (Railway Cron),
   // which has no browser session — it authenticates itself via CRON_SECRET
@@ -15,20 +16,36 @@ export default auth((req) => {
   if (isCronApi) return;
 
   if (!isLoggedIn && !isLoginPage && !isAuthApi) {
+    // A fetch() from a page whose session expired should get a 401 it can
+    // act on, not a 200 HTML login page that blows up in `res.json()`.
+    if (isApi) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
     const loginUrl = new URL("/login", req.url);
+    if (path !== "/") loginUrl.searchParams.set("callbackUrl", path);
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isLoggedIn && path.startsWith("/admin")) {
-    const role = (req.auth?.user as { role?: string } | undefined)?.role;
-    if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
+  // Already signed in — no reason to show the login form again.
+  if (isLoggedIn && isLoginPage) {
+    return NextResponse.redirect(new URL("/", req.url));
   }
 
-  if (isLoggedIn && path.startsWith("/admin/import")) {
-    const role = (req.auth?.user as { role?: string } | undefined)?.role;
-    if (role !== "SUPER_ADMIN") {
+  const role = (req.auth?.user as { role?: string } | undefined)?.role;
+
+  if (isLoggedIn && path.startsWith("/admin/import") && role !== "SUPER_ADMIN") {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
+  if (isLoggedIn && path.startsWith("/admin") && role !== "ADMIN" && role !== "SUPER_ADMIN") {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
+  if (isLoggedIn && path.startsWith("/manager")) {
+    const managerOk = role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER";
+    const reportsOk = managerOk || role === "WAREHOUSE_MANAGER";
+    const isReportsPage = path.startsWith("/manager/reports") || path.startsWith("/manager/audit");
+    if (!(isReportsPage ? reportsOk : managerOk)) {
       return NextResponse.redirect(new URL("/", req.url));
     }
   }

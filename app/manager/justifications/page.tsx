@@ -16,11 +16,21 @@ type Justification = {
 export default function JustificationsPage() {
   const [items, setItems] = useState<Justification[]>([]);
   const [filter, setFilter] = useState<"PENDING" | "APPROVED" | "REJECTED">("PENDING");
+  const [error, setError] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetch(`/api/justifications?status=${filter}`);
-    const data = await res.json();
-    setItems(data.justifications ?? []);
+    try {
+      const res = await fetch(`/api/justifications?status=${filter}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : `Couldn't load justifications (${res.status}).`);
+        return;
+      }
+      setItems(data.justifications ?? []);
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    }
   }
 
   useEffect(() => {
@@ -29,12 +39,24 @@ export default function JustificationsPage() {
   }, [filter]);
 
   async function review(id: string, decision: "APPROVED" | "REJECTED") {
-    await fetch(`/api/justifications/${id}/review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
-    });
-    load();
+    setError(null);
+    setReviewingId(id);
+    try {
+      const res = await fetch(`/api/justifications/${id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(typeof data.error === "string" ? data.error : `Couldn't save that decision (${res.status}).`);
+      }
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    } finally {
+      setReviewingId(null);
+      load();
+    }
   }
 
   return (
@@ -57,6 +79,10 @@ export default function JustificationsPage() {
           </button>
         ))}
       </div>
+
+      {error && (
+        <p className="mt-4 rounded-lg border-2 border-nexus-danger/40 bg-white p-3 text-sm text-nexus-danger">{error}</p>
+      )}
 
       <div className="mt-6 flex flex-col gap-4">
         {items.map((item) => (
@@ -82,13 +108,15 @@ export default function JustificationsPage() {
               <div className="mt-3 flex gap-2">
                 <button
                   onClick={() => review(item.id, "APPROVED")}
-                  className="tap-target flex-1 rounded-lg bg-nexus-ok font-medium text-white"
+                  disabled={reviewingId === item.id}
+                  className="tap-target flex-1 rounded-lg bg-nexus-ok font-medium text-white disabled:opacity-40"
                 >
                   Approve
                 </button>
                 <button
                   onClick={() => review(item.id, "REJECTED")}
-                  className="tap-target flex-1 rounded-lg bg-nexus-danger font-medium text-white"
+                  disabled={reviewingId === item.id}
+                  className="tap-target flex-1 rounded-lg bg-nexus-danger font-medium text-white disabled:opacity-40"
                 >
                   Reject
                 </button>

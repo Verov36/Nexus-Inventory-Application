@@ -28,9 +28,17 @@ export default function ManagerTrucksPage() {
   const [assigningFor, setAssigningFor] = useState<string | null>(null);
 
   async function loadTrucks() {
-    const res = await fetch("/api/trucks");
-    const data = await res.json();
-    setTrucks(data.trucks ?? []);
+    try {
+      const res = await fetch("/api/trucks");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : `Couldn't load trucks (${res.status}).`);
+        return;
+      }
+      setTrucks(data.trucks ?? []);
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    }
   }
 
   async function loadTechs() {
@@ -48,12 +56,38 @@ export default function ManagerTrucksPage() {
 
   async function createTruck() {
     if (!newTruckLabel.trim()) return;
-    await fetch("/api/trucks", {
+    setError(null);
+    setNotice(null);
+    const res = await fetch("/api/trucks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: newTruckLabel }),
+      body: JSON.stringify({ label: newTruckLabel.trim() }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(typeof data.error === "string" ? data.error : `Couldn't add that truck (${res.status}).`);
+      return;
+    }
     setNewTruckLabel("");
+    setNotice("Truck added.");
+    loadTrucks();
+  }
+
+  async function removeLimit(truckId: string, limitId: string, label: string) {
+    if (!confirm(`Remove the cap on ${label}? Restocks of it will no longer be limited on this truck.`)) return;
+    setError(null);
+    setNotice(null);
+    const res = await fetch(`/api/trucks/${truckId}/limits`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limitId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(typeof data.error === "string" ? data.error : `Couldn't remove that cap (${res.status}).`);
+      return;
+    }
+    setNotice(`Cap removed: ${label}.`);
     loadTrucks();
   }
 
@@ -105,13 +139,18 @@ export default function ManagerTrucksPage() {
       setError("Search for and select a part, and enter a max quantity, before setting a cap.");
       return;
     }
+    const maxQty = Number(form.maxQty);
+    if (!Number.isInteger(maxQty) || maxQty < 0) {
+      setError("Max quantity must be a whole number of 0 or more.");
+      return;
+    }
     setError(null);
     setNotice(null);
     setSavingLimitFor(truckId);
     const res = await fetch(`/api/trucks/${truckId}/limits`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ partId: form.selected.id, maxQty: Number(form.maxQty) }),
+      body: JSON.stringify({ partId: form.selected.id, maxQty }),
     });
     setSavingLimitFor(null);
     if (!res.ok) {
@@ -127,12 +166,18 @@ export default function ManagerTrucksPage() {
   async function toggleActive(truckId: string, active: boolean) {
     setError(null);
     setNotice(null);
-    await fetch(`/api/trucks/${truckId}`, {
+    const res = await fetch(`/api/trucks/${truckId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(typeof data.error === "string" ? data.error : `Couldn't update that truck (${res.status}).`);
+      return;
+    }
     loadTrucks();
+    loadTechs();
   }
 
   async function deleteTruck(truckId: string, label: string) {
@@ -140,7 +185,7 @@ export default function ManagerTrucksPage() {
     setError(null);
     setNotice(null);
     const res = await fetch(`/api/trucks/${truckId}`, { method: "DELETE" });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(typeof data.error === "string" ? data.error : "Couldn't delete truck.");
       return;
@@ -240,18 +285,33 @@ export default function ManagerTrucksPage() {
                 <div className="mt-3">
                   <p className="text-xs uppercase tracking-wide text-nexus-steel">Caps</p>
                   <ul className="text-sm">
-                    {truck.stockLimits.map((l) => (
-                      <li key={l.id}>
-                        {l.part ? (
-                          <>
-                            {l.part.name} <span className="font-data text-xs text-nexus-steel">({l.part.sku})</span>
-                          </>
-                        ) : (
-                          l.category
-                        )}
-                        : max {l.maxQty}
-                      </li>
-                    ))}
+                    {truck.stockLimits.map((l) => {
+                      const label = l.part ? `${l.part.name} (${l.part.sku})` : `${l.category} (category)`;
+                      return (
+                        <li key={l.id} className="flex items-center justify-between gap-2 py-0.5">
+                          <span>
+                            {l.part ? (
+                              <>
+                                {l.part.name} <span className="font-data text-xs text-nexus-steel">({l.part.sku})</span>
+                              </>
+                            ) : (
+                              <>
+                                {l.category} <span className="text-xs text-nexus-steel">(category)</span>
+                              </>
+                            )}
+                            : max {l.maxQty}
+                          </span>
+                          {truck.active && (
+                            <button
+                              onClick={() => removeLimit(truck.id, l.id, label)}
+                              className="text-xs text-nexus-danger underline"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -285,6 +345,9 @@ export default function ManagerTrucksPage() {
                     <input
                       placeholder="Max qty"
                       type="number"
+                      min={0}
+                      step={1}
+                      inputMode="numeric"
                       value={form.maxQty}
                       onChange={(e) =>
                         setLimitForm((prev) => ({ ...prev, [truck.id]: { ...getForm(truck.id), maxQty: e.target.value } }))

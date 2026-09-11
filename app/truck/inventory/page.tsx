@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { canCheckoutToTruck, canManageTrucksAndLimits } from "@/lib/roles";
+import { findApplicableLimit } from "@/lib/limits";
 
 type StockItem = {
   part: { id: string; sku: string; name: string; category: string | null };
@@ -14,6 +15,8 @@ type StockItem = {
 type Truck = {
   id: string;
   label: string;
+  active: boolean;
+  techId: string | null;
   stockLevels: StockItem[];
   stockLimits: { part: { id: string; sku: string; name: string } | null; category: string | null; maxQty: number }[];
 };
@@ -40,10 +43,12 @@ function groupByCategory(items: StockItem[]) {
 export default function TruckInventoryPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
-  const canReturn = canCheckoutToTruck(role) || canManageTrucksAndLimits(role);
+  const userId = (session?.user as { id?: string } | undefined)?.id;
   const canWriteOff = canManageTrucksAndLimits(role);
 
   const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<{ truckId: string; partId: string; mode: "return" | "writeoff" } | null>(
     null
   );
@@ -54,9 +59,18 @@ export default function TruckInventoryPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   function load() {
+    setLoadError(null);
     fetch("/api/trucks")
-      .then((r) => r.json())
-      .then((d) => setTrucks(d.trucks ?? []));
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          setLoadError(typeof d.error === "string" ? d.error : `Couldn't load trucks (${r.status}).`);
+          return;
+        }
+        setTrucks(d.trucks ?? []);
+      })
+      .catch(() => setLoadError("Couldn't reach the server — check your connection."))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => {
@@ -83,10 +97,10 @@ export default function TruckInventoryPage() {
       quantity: Number(quantity),
     };
     if (activeAction.mode === "return") {
-      body.warehouseId = DEFAULT_WAREHOUSE_ID;
-      if (reason) body.notes = reason;
+      body.warehouseId = DEFAULT_WAREHOUSE_ID || undefined;
+      if (reason.trim()) body.notes = reason.trim();
     } else {
-      body.reason = reason;
+      body.reason = reason.trim();
     }
 
     try {
@@ -117,13 +131,30 @@ export default function TruckInventoryPage() {
       {notice && (
         <p className="mt-4 rounded-lg border-2 border-nexus-ok/40 bg-white p-3 text-sm text-nexus-ok">{notice}</p>
       )}
+      {loadError && (
+        <p className="mt-4 rounded-lg border-2 border-nexus-danger/40 bg-white p-3 text-sm text-nexus-danger">{loadError}</p>
+      )}
+      {loading && <p className="mt-4 text-sm text-nexus-steel">Loading…</p>}
+      {!loading && !loadError && trucks.length === 0 && (
+        <p className="mt-4 text-sm text-nexus-steel">
+          {role === "TRUCK_TECH"
+            ? "No truck is assigned to you yet — ask a manager to assign one under Manage trucks."
+            : "No trucks yet — add one under Manage trucks."}
+        </p>
+      )}
 
       <div className="mt-6 flex flex-col gap-4">
         {trucks.map((truck) => {
           const grouped = groupByCategory(truck.stockLevels);
+          // Returns follow the same rule the API enforces: a tech can only
+          // pull stock off their own truck, managers/admins off any truck.
+          const canReturn =
+            canManageTrucksAndLimits(role) || (canCheckoutToTruck(role) && !!userId && truck.techId === userId);
           return (
-            <div key={truck.id} className="rounded-xl border-2 border-nexus-steel/15 bg-white p-4">
-              <p className="text-lg font-medium text-nexus-navy">{truck.label}</p>
+            <div key={truck.id} className={`rounded-xl border-2 border-nexus-steel/15 bg-white p-4 ${truck.active ? "" : "opacity-60"}`}>
+              <p className="text-lg font-medium text-nexus-navy">
+                {truck.label} {!truck.active && <span className="text-sm text-nexus-steel">(deactivated)</span>}
+              </p>
 
               {grouped.length === 0 && <p className="mt-2 text-sm text-nexus-steel">Nothing checked out to this truck yet.</p>}
 
@@ -143,8 +174,8 @@ export default function TruckInventoryPage() {
                   </p>
                   <ul className="divide-y divide-nexus-steel/10 text-sm">
                     {items.map((sl, i) => {
-                      const limit = truck.stockLimits.find((l) => l.part?.id === sl.part.id);
-                      const overCap = limit && sl.quantity > limit.maxQty;
+                      const limit = findApplicableLimit(truck.stockLimits, sl.part);
+                      const overCap = !!limit && sl.quantity > limit.maxQty;
                       const isActionRow =
                         activeAction?.truckId === truck.id && activeAction?.partId === sl.part.id;
                       return (
@@ -196,6 +227,8 @@ export default function TruckInventoryPage() {
                                   type="number"
                                   min={1}
                                   max={sl.quantity}
+                                  step={1}
+                                  inputMode="numeric"
                                   value={quantity}
                                   onChange={(e) => setQuantity(e.target.value)}
                                   className="w-20 rounded-lg border-2 border-nexus-steel/30 px-2 py-1 text-sm"
@@ -230,9 +263,10 @@ export default function TruckInventoryPage() {
                                   disabled={
                                     busy ||
                                     !quantity ||
+                                    !Number.isInteger(Number(quantity)) ||
                                     Number(quantity) < 1 ||
                                     Number(quantity) > sl.quantity ||
-                                    (activeAction.mode === "writeoff" && !reason)
+                                    (activeAction.mode === "writeoff" && !reason.trim())
                                   }
                                   className={`tap-target flex-1 rounded-lg text-sm font-medium text-white disabled:opacity-40 ${
                                     activeAction.mode === "writeoff" ? "bg-nexus-danger" : "bg-nexus-ok"

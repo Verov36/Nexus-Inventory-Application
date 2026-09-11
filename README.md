@@ -21,7 +21,11 @@ Built mobile/tablet-first.
   job/work order number) or **truck restock** (no job number, just filling
   the truck toward its cap). Restock is blocked outright if it would exceed
   the cap — there's no justification path for restock, the cap is the cap.
-- `/truck/inventory` — current stock on each truck against its caps.
+  A tech can only check out to the truck they're assigned to; managers and
+  admins can load any active truck.
+- `/truck/inventory` — current stock on each truck against its caps (part
+  caps first, then category caps), with return-to-warehouse and write-off
+  actions.
 - Core logic lives in `app/api/inventory/checkout/route.ts` and
   `lib/inventory.ts`.
 
@@ -61,39 +65,52 @@ Built mobile/tablet-first.
 ```bash
 npm install
 cp .env.example .env.local        # fill in DATABASE_URL and AUTH_SECRET
-npx prisma migrate dev --name init
-psql "$DATABASE_URL" -f prisma/manual-fixes.sql   # partial unique indexes, see below
-npm run seed                       # creates a warehouse + demo manager login
+npx prisma migrate dev            # applies every migration, including the partial unique indexes
+npm run seed                       # creates a warehouse + the super admin login
 npm run dev
 ```
 
 The seed script prints a warehouse id — put it in `.env.local` as
-`NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID`.
+`NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID`. (If you skip this the server falls back
+to `DEFAULT_WAREHOUSE_ID`, then to the first warehouse in the database, so
+receiving/checkout still works.)
 
-Demo login: `manager@example.com` / `changeme123`
+Seed login: `chris@example.com` / `changeme123` — change the password from
+`/admin/users` right after first sign-in.
+
+`npm run typecheck` runs the TypeScript compiler over the whole app; run it
+before pushing.
+
+## Deploying / applying migrations on Railway
+
+Railway builds from `main` and runs `npm start`. Migrations are **not** run
+automatically on deploy — after pushing a change that adds a migration, run:
+
+```bash
+railway run npx prisma migrate deploy
+```
+
+The migration `20260911120000_partial_unique_indexes` contains the partial
+unique indexes that used to live in `prisma/manual-fixes.sql`. It's safe to
+apply on a database where the manual script already ran (every statement is
+`IF NOT EXISTS`).
+
+Set `CRON_SECRET` in the Railway variables before adding the report cron job
+(see Phase 5 below) — the endpoint refuses to run until it's set.
 
 ## Known limitations / before production
 
-- **Run `prisma/manual-fixes.sql`** — Postgres treats `NULL` as distinct in
-  unique indexes, so a few composite uniques in the schema
-  (`StockLevel`, `TruckStockLimit`) don't fully protect against duplicate
-  rows under concurrent writes without these partial indexes.
-- Truck context on `/truck/checkout` is a manually-typed truck id for now —
-  once tech accounts are tied to their assigned truck via session, that
-  field should be replaced with a read from the signed-in user.
-- No route-level auth guards yet (pages don't redirect unauthenticated users)
-  — `middleware.ts` should be added before this goes further than local
-  testing.
-- Manager screens (`/manager/*`) don't check `role === MANAGER` in the UI,
-  only in the API routes that matter (limits, justification review) — add
-  UI-level guards too so techs don't see manager screens in the first place.
 - Job-use overage justifications unblock the checkout immediately on
   submission and get reviewed after the fact — if you'd rather block until a
   manager actively approves, that's a small change to
   `app/api/inventory/checkout/route.ts`.
-- Warehouse selection is a single hardcoded warehouse via env var;
-  multi-warehouse orgs need a picker.
+- Warehouse selection is a single default warehouse; multi-warehouse orgs
+  need a picker.
 - CSV export exists; PDF export for the weekly report doesn't yet.
+- Role and receiving-permission changes reach a signed-in user the next time
+  their app tab loads or regains focus (the shell refreshes the session from
+  the database then); API routes that matter (receiving, creating parts)
+  always check the database directly.
 
 ## Phase 5 — Roles, navigation, scheduled reports, mass import
 

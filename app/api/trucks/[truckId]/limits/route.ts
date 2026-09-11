@@ -6,8 +6,8 @@ import { canManageTrucksAndLimits } from "@/lib/roles";
 
 const limitSchema = z
   .object({
-    partId: z.string().optional(),
-    category: z.string().optional(),
+    partId: z.string().trim().min(1).optional(),
+    category: z.string().trim().min(1).optional(),
     maxQty: z.number().int().min(0),
   })
   .refine((d) => !!d.partId !== !!d.category, {
@@ -35,7 +35,13 @@ export async function POST(req: NextRequest, { params }: { params: { truckId: st
     return NextResponse.json({ error: "Only a manager or admin can set truck stock limits" }, { status: 403 });
   }
 
-  const parsed = limitSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = limitSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -56,15 +62,19 @@ export async function POST(req: NextRequest, { params }: { params: { truckId: st
     // existing cap threw a raw duplicate-key error instead of updating it.
     const existing = partId
       ? await prisma.truckStockLimit.findFirst({ where: { truckId: params.truckId, partId } })
-      : await prisma.truckStockLimit.findFirst({ where: { truckId: params.truckId, category, partId: null } });
+      : await prisma.truckStockLimit.findFirst({
+          where: { truckId: params.truckId, category: { equals: category, mode: "insensitive" }, partId: null },
+        });
 
     const limit = existing
       ? await prisma.truckStockLimit.update({
           where: { id: existing.id },
           data: { maxQty, setById: session.user.id },
+          include: { part: true },
         })
       : await prisma.truckStockLimit.create({
           data: { truckId: params.truckId, partId, category, maxQty, setById: session.user.id },
+          include: { part: true },
         });
 
     return NextResponse.json({ limit }, { status: 201 });
@@ -75,4 +85,34 @@ export async function POST(req: NextRequest, { params }: { params: { truckId: st
       { status: 500 }
     );
   }
+}
+
+const deleteSchema = z.object({ limitId: z.string().min(1) });
+
+// DELETE /api/trucks/:truckId/limits  { limitId } — remove a cap entirely.
+// Previously the only way to "remove" a cap was to set it to 0, which
+// actually blocks every restock of that part rather than lifting the limit.
+export async function DELETE(req: NextRequest, { params }: { params: { truckId: string } }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  if (!canManageTrucksAndLimits((session.user as { role?: string }).role)) {
+    return NextResponse.json({ error: "Only a manager or admin can remove truck stock limits" }, { status: 403 });
+  }
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = deleteSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  const result = await prisma.truckStockLimit.deleteMany({
+    where: { id: parsed.data.limitId, truckId: params.truckId },
+  });
+  if (result.count === 0) return NextResponse.json({ error: "Cap not found" }, { status: 404 });
+  return NextResponse.json({ deleted: true });
 }

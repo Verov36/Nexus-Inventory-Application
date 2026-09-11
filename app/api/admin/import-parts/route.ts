@@ -2,15 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roles";
+import { resolveWarehouseId } from "@/lib/inventory";
 
 /**
  * POST /api/admin/import-parts
- * Body: { csv: string, warehouseId: string }
+ * Body: { csv: string, warehouseId?: string }
  * Expected header row: sku,name,barcodeValue,category,unitCost,reorderThreshold,initialQuantity
  * Only sku, name, and barcodeValue are required per row. If initialQuantity is
  * present and > 0, a warehouse StockLevel and a RECEIVE transaction are
  * created too — otherwise the part exists in the catalog with zero stock,
  * which won't show up on the inventory page until it's received normally.
+ *
+ * On re-import of an existing SKU, only the columns actually present in the
+ * CSV are updated — a catalog re-import without a reorderThreshold column no
+ * longer wipes every manually-set reorder point back to 0.
  */
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -19,12 +24,20 @@ export async function POST(req: NextRequest) {
   }
   const userId = session!.user!.id!;
 
-  const { csv, warehouseId } = await req.json();
+  let body: { csv?: unknown; warehouseId?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const { csv } = body;
   if (typeof csv !== "string" || !csv.trim()) {
     return NextResponse.json({ error: "csv text is required" }, { status: 400 });
   }
 
-  const lines = csv.trim().split(/\r?\n/);
+  // Excel and Windows editors often prefix a UTF-8 BOM, which would make the
+  // first header read as "﻿sku" and fail the required-column check.
+  const lines = csv.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
   const header = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
   const required = ["sku", "name", "barcodevalue"];
   for (const col of required) {
@@ -46,11 +59,15 @@ export async function POST(req: NextRequest) {
     initialQuantity: header.indexOf("initialquantity"),
   };
 
-  if (idx.initialQuantity >= 0 && !warehouseId) {
-    return NextResponse.json(
-      { error: "warehouseId is required when the CSV includes an initialQuantity column" },
-      { status: 400 }
-    );
+  let warehouseId: string | null = null;
+  if (idx.initialQuantity >= 0) {
+    warehouseId = await resolveWarehouseId(typeof body.warehouseId === "string" ? body.warehouseId : undefined);
+    if (!warehouseId) {
+      return NextResponse.json(
+        { error: "The CSV includes an initialQuantity column but no warehouse exists to stock — run the seed first." },
+        { status: 400 }
+      );
+    }
   }
 
   const results = {
@@ -59,6 +76,9 @@ export async function POST(req: NextRequest) {
     stocked: 0,
     skipped: [] as { line: number; reason: string }[],
   };
+
+  const seenSkus = new Set<string>();
+  const seenBarcodes = new Set<string>();
 
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
@@ -72,37 +92,81 @@ export async function POST(req: NextRequest) {
       results.skipped.push({ line: i + 1, reason: "Missing sku, name, or barcodeValue" });
       continue;
     }
+    if (seenSkus.has(sku.toLowerCase())) {
+      results.skipped.push({ line: i + 1, reason: `Duplicate SKU ${sku} earlier in this file` });
+      continue;
+    }
+    if (seenBarcodes.has(barcodeValue)) {
+      results.skipped.push({ line: i + 1, reason: `Duplicate barcode ${barcodeValue} earlier in this file` });
+      continue;
+    }
+    seenSkus.add(sku.toLowerCase());
+    seenBarcodes.add(barcodeValue);
 
-    const category = idx.category >= 0 ? cols[idx.category]?.trim() || undefined : undefined;
-    const unitCostRaw = idx.unitCost >= 0 ? cols[idx.unitCost]?.trim() : undefined;
-    const unitCost = unitCostRaw ? Number(unitCostRaw) : undefined;
-    const reorderThresholdRaw = idx.reorderThreshold >= 0 ? cols[idx.reorderThreshold]?.trim() : undefined;
-    const reorderThreshold = reorderThresholdRaw ? Number(reorderThresholdRaw) : 0;
-    const initialQuantityRaw = idx.initialQuantity >= 0 ? cols[idx.initialQuantity]?.trim() : undefined;
-    const initialQuantity = initialQuantityRaw ? Number(initialQuantityRaw) : 0;
+    const categoryRaw = idx.category >= 0 ? cols[idx.category]?.trim() : undefined;
+    const category = idx.category >= 0 ? categoryRaw || null : undefined;
+
+    const unitCost = parseOptionalNumber(idx.unitCost >= 0 ? cols[idx.unitCost] : undefined);
+    if (unitCost === "invalid") {
+      results.skipped.push({ line: i + 1, reason: `unitCost "${cols[idx.unitCost]}" is not a number` });
+      continue;
+    }
+    const reorderThreshold = parseOptionalNumber(idx.reorderThreshold >= 0 ? cols[idx.reorderThreshold] : undefined);
+    if (reorderThreshold === "invalid" || (typeof reorderThreshold === "number" && (reorderThreshold < 0 || !Number.isInteger(reorderThreshold)))) {
+      results.skipped.push({ line: i + 1, reason: `reorderThreshold "${cols[idx.reorderThreshold]}" must be a whole number ≥ 0` });
+      continue;
+    }
+    const initialQuantity = parseOptionalNumber(idx.initialQuantity >= 0 ? cols[idx.initialQuantity] : undefined);
+    if (initialQuantity === "invalid" || (typeof initialQuantity === "number" && (initialQuantity < 0 || !Number.isInteger(initialQuantity)))) {
+      results.skipped.push({ line: i + 1, reason: `initialQuantity "${cols[idx.initialQuantity]}" must be a whole number ≥ 0` });
+      continue;
+    }
 
     try {
+      // Another part already owning this barcode (under a different SKU)
+      // would hit the unique index and abort the row with a raw DB error —
+      // give a readable reason instead.
+      const barcodeOwner = await prisma.part.findUnique({ where: { barcodeValue }, select: { sku: true } });
+      if (barcodeOwner && barcodeOwner.sku !== sku) {
+        results.skipped.push({ line: i + 1, reason: `Barcode ${barcodeValue} already belongs to SKU ${barcodeOwner.sku}` });
+        continue;
+      }
+
       const existing = await prisma.part.findUnique({ where: { sku } });
       let partId: string;
       if (existing) {
         const updated = await prisma.part.update({
           where: { sku },
-          data: { name, category, unitCost, reorderThreshold, barcodeValue },
+          data: {
+            name,
+            barcodeValue,
+            ...(category !== undefined ? { category } : {}),
+            ...(unitCost !== undefined ? { unitCost } : {}),
+            ...(reorderThreshold !== undefined ? { reorderThreshold } : {}),
+          },
         });
         partId = updated.id;
         results.updated++;
       } else {
         const created = await prisma.part.create({
-          data: { sku, name, category, unitCost, reorderThreshold, barcodeValue },
+          data: {
+            sku,
+            name,
+            barcodeValue,
+            category: category ?? undefined,
+            unitCost: unitCost ?? undefined,
+            reorderThreshold: reorderThreshold ?? 0,
+          },
         });
         partId = created.id;
         results.created++;
       }
 
-      if (initialQuantity > 0 && warehouseId) {
+      if (typeof initialQuantity === "number" && initialQuantity > 0 && warehouseId) {
+        const wid = warehouseId;
         await prisma.$transaction(async (tx) => {
           const stockLevel = await tx.stockLevel.findFirst({
-            where: { partId, warehouseId, truckId: null },
+            where: { partId, warehouseId: wid, truckId: null },
           });
           if (stockLevel) {
             await tx.stockLevel.update({
@@ -111,7 +175,7 @@ export async function POST(req: NextRequest) {
             });
           } else {
             await tx.stockLevel.create({
-              data: { partId, warehouseId, locationType: "WAREHOUSE", quantity: initialQuantity },
+              data: { partId, warehouseId: wid, locationType: "WAREHOUSE", quantity: initialQuantity },
             });
           }
           await tx.inventoryTransaction.create({
@@ -120,8 +184,9 @@ export async function POST(req: NextRequest) {
               partId,
               quantity: initialQuantity,
               toLocationType: "WAREHOUSE",
-              toWarehouseId: warehouseId,
+              toWarehouseId: wid,
               performedById: userId,
+              notes: "Mass import",
             },
           });
         });
@@ -136,6 +201,14 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ results });
+}
+
+/** "" / undefined -> undefined (column blank), bad text -> "invalid", else the number. */
+function parseOptionalNumber(raw: string | undefined): number | undefined | "invalid" {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const n = Number(trimmed.replace(/^\$/, "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : "invalid";
 }
 
 /** Splits one CSV line on commas while respecting "quoted, fields" containing commas. */

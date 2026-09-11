@@ -22,7 +22,9 @@ export async function GET() {
     where,
     include: {
       tech: { select: { id: true, name: true, email: true } },
-      stockLevels: { include: { part: true } },
+      // Rows that have been fully returned/written off sit at 0 — hide them
+      // so the inventory list doesn't fill up with "0 / cap" lines.
+      stockLevels: { where: { quantity: { gt: 0 } }, include: { part: true } },
       stockLimits: { include: { part: true } },
     },
     orderBy: { label: "asc" },
@@ -73,23 +75,43 @@ export async function GET() {
     ...truck,
     stockLevels: truck.stockLevels.map((sl) => {
       const entry = breakdownMap.get(`${truck.id}|${sl.part.id}`) ?? { job: 0, restock: 0 };
-      return { ...sl, jobQuantity: entry.job, restockQuantity: entry.restock };
+      // The ledger and the live count can disagree (e.g. history from before
+      // returns were tracked). Trust the live count: clamp the buckets so
+      // job + restock never exceeds what's actually on the truck.
+      const job = Math.min(entry.job, sl.quantity);
+      const restock = sl.quantity - job;
+      return { ...sl, jobQuantity: job, restockQuantity: restock };
     }),
   }));
 
   return NextResponse.json({ trucks: trucksWithBreakdown });
 }
 
-const createTruckSchema = z.object({ label: z.string().min(1) });
+const createTruckSchema = z.object({ label: z.string().trim().min(1) });
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Only a manager or admin can add trucks" }, { status: 403 });
   }
-  const parsed = createTruckSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = createTruckSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  const duplicate = await prisma.truck.findFirst({
+    where: { label: { equals: parsed.data.label, mode: "insensitive" } },
+  });
+  if (duplicate) {
+    return NextResponse.json(
+      { error: `There's already a truck labelled "${duplicate.label}"${duplicate.active ? "" : " (deactivated — reactivate it instead)"}.` },
+      { status: 409 }
+    );
   }
   const truck = await prisma.truck.create({ data: { label: parsed.data.label } });
   return NextResponse.json({ truck }, { status: 201 });

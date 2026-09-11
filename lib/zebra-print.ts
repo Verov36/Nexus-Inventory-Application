@@ -7,8 +7,8 @@
  *      It runs a small local service on http://localhost:9100 that this app
  *      talks to — no server-side print driver needed.
  *   2. Download BrowserPrint-3.1.xxx.min.js from the same install package and
- *      drop it in /public/browserprint/BrowserPrint-3.1.min.js. It's loaded via
- *      a <script> tag in app/layout.tsx.
+ *      drop it in /public/browserprint/BrowserPrint-3.1.min.js. This module
+ *      loads it on demand the first time a label is printed.
  *   3. Zebra ZD421 (or any ZPL-speaking Zebra) is the recommended printer —
  *      203dpi, 4"x2" or 2"x1" label stock works well for parts.
  *
@@ -94,15 +94,42 @@ export function buildPartLabelZPL(label: LabelData, copies = 1): string {
 `.trim();
 }
 
+const SDK_URL = "/browserprint/BrowserPrint-3.1.min.js";
+const SDK_MISSING_MESSAGE =
+  "Zebra Browser Print isn't set up on this machine. Install the Browser Print app, add BrowserPrint-3.1.min.js to public/browserprint/, and make sure the printer is connected.";
+
+let sdkLoad: Promise<void> | null = null;
+
+/**
+ * Loads Zebra's SDK script on first use instead of on every page. Resolves
+ * once window.BrowserPrint exists; rejects if the file isn't deployed.
+ */
+function ensureBrowserPrintLoaded(): Promise<void> {
+  if (typeof window === "undefined") return Promise.reject(new Error(SDK_MISSING_MESSAGE));
+  if (window.BrowserPrint) return Promise.resolve();
+  if (!sdkLoad) {
+    sdkLoad = new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = SDK_URL;
+      script.async = true;
+      script.onload = () => (window.BrowserPrint ? resolve() : reject(new Error(SDK_MISSING_MESSAGE)));
+      script.onerror = () => {
+        script.remove();
+        sdkLoad = null; // allow a retry after the file is added
+        reject(new Error(SDK_MISSING_MESSAGE));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return sdkLoad;
+}
+
 /** Resolves the default Zebra printer registered with Browser Print. */
-export function getDefaultZebraPrinter(): Promise<ZebraDevice> {
+export async function getDefaultZebraPrinter(): Promise<ZebraDevice> {
+  await ensureBrowserPrintLoaded();
   return new Promise((resolve, reject) => {
-    if (typeof window === "undefined" || !window.BrowserPrint) {
-      reject(
-        new Error(
-          "Zebra Browser Print isn't detected. Make sure the Browser Print app is running on this machine and the printer is connected."
-        )
-      );
+    if (!window.BrowserPrint) {
+      reject(new Error(SDK_MISSING_MESSAGE));
       return;
     }
     window.BrowserPrint.getDefaultDevice(
@@ -114,10 +141,11 @@ export function getDefaultZebraPrinter(): Promise<ZebraDevice> {
 }
 
 /** Lists every Zebra printer Browser Print can see (USB, network, Bluetooth). */
-export function listZebraPrinters(): Promise<ZebraDevice[]> {
+export async function listZebraPrinters(): Promise<ZebraDevice[]> {
+  await ensureBrowserPrintLoaded();
   return new Promise((resolve, reject) => {
-    if (typeof window === "undefined" || !window.BrowserPrint) {
-      reject(new Error("Zebra Browser Print isn't detected on this machine."));
+    if (!window.BrowserPrint) {
+      reject(new Error(SDK_MISSING_MESSAGE));
       return;
     }
     window.BrowserPrint.getLocalDevices(

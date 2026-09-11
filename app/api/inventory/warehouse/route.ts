@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { canViewWarehouseInventory } from "@/lib/roles";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  if (!canViewWarehouseInventory((session.user as { role?: string }).role)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const stockLevels = await prisma.stockLevel.findMany({

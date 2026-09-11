@@ -1,8 +1,8 @@
--- Run this once after `prisma migrate dev --name init`, or fold it into that
--- migration's generated SQL before applying. Postgres treats NULL as distinct
--- in a normal unique index, so StockLevel(partId, warehouseId, truckId) and
--- TruckStockLimit(truckId, partId, category) don't actually stop duplicate
--- warehouse/category rows under concurrent writes. Partial indexes fix that.
+-- Superseded: these partial unique indexes now live in
+-- prisma/migrations/20260911120000_partial_unique_indexes and are applied by
+-- `prisma migrate deploy` (which runs automatically on `npm start`). This file
+-- is kept only so older setup notes still point at something; running it
+-- again is harmless (every statement is IF NOT EXISTS).
 
 CREATE UNIQUE INDEX IF NOT EXISTS stock_level_warehouse_unique
   ON "StockLevel" ("partId", "warehouseId") WHERE "truckId" IS NULL;

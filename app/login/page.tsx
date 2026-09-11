@@ -1,27 +1,47 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Only ever bounce back to a same-site path, never an absolute URL from
+  // the query string.
+  const rawCallback = searchParams.get("callbackUrl") ?? "/";
+  const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await signIn("credentials", { email, password, redirect: false });
-    setBusy(false);
-    if (res?.error) {
-      setError("Email or password didn't match.");
-      return;
+    try {
+      const res = await signIn("credentials", { email: email.trim(), password, redirect: false });
+      if (res?.error) {
+        setError("Email or password didn't match.");
+        return;
+      }
+      router.push(callbackUrl);
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the server — check your connection and try again.");
+    } finally {
+      setBusy(false);
     }
-    router.push("/");
   }
 
   return (
@@ -35,6 +55,7 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
           className="tap-target rounded-lg border-2 border-nexus-steel/30 bg-white px-4"
           autoComplete="username"
+          required
         />
         <input
           type="password"
@@ -43,6 +64,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           className="tap-target rounded-lg border-2 border-nexus-steel/30 bg-white px-4"
           autoComplete="current-password"
+          required
         />
         {error && <p className="text-sm text-nexus-danger">{error}</p>}
         <button

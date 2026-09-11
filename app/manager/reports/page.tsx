@@ -16,11 +16,20 @@ type Summary = {
 type Schedule = { id: string; frequencyDays: number; lastRunAt: string | null; nextRunAt: string };
 type Snapshot = { id: string; rangeFrom: string; rangeTo: string; generatedAt: string; summary: Summary };
 
+// Local calendar dates, not UTC — toISOString() would roll "today" back a
+// day for anyone west of Greenwich in the evening.
+function toLocalDateInput(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function defaultRange() {
   const to = new Date();
   const from = new Date();
   from.setDate(from.getDate() - 7);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return { from: toLocalDateInput(from), to: toLocalDateInput(to) };
 }
 
 export default function ReportsPage() {
@@ -30,6 +39,8 @@ export default function ReportsPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [frequencyInput, setFrequencyInput] = useState("7");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/report-schedule")
@@ -46,23 +57,39 @@ export default function ReportsPage() {
   }, []);
 
   async function saveFrequency() {
+    setScheduleNotice(null);
+    setError(null);
     const res = await fetch("/api/report-schedule", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ frequencyDays: Number(frequencyInput) }),
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      const data = await res.json();
       setSchedule(data.schedule);
+      setScheduleNotice("Schedule saved.");
+    } else {
+      setError(typeof data.error === "string" ? data.error : `Couldn't save the schedule (${res.status}).`);
     }
   }
 
   async function runReport() {
     setBusy(true);
-    const res = await fetch(`/api/reports/weekly?from=${range.from}&to=${range.to}`);
-    const data = await res.json();
-    setSummary(data.summary ?? null);
-    setBusy(false);
+    setError(null);
+    try {
+      const res = await fetch(`/api/reports/weekly?from=${range.from}&to=${range.to}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSummary(null);
+        setError(typeof data.error === "string" ? data.error : `Couldn't run the report (${res.status}).`);
+        return;
+      }
+      setSummary(data.summary ?? null);
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function downloadCsv() {
@@ -101,8 +128,13 @@ export default function ReportsPage() {
               Next run: {new Date(schedule.nextRunAt).toLocaleDateString()}
             </span>
           )}
+          {scheduleNotice && <span className="text-xs text-nexus-ok">{scheduleNotice}</span>}
         </div>
       </section>
+
+      {error && (
+        <p className="mt-4 rounded-lg border-2 border-nexus-danger/40 bg-white p-3 text-sm text-nexus-danger">{error}</p>
+      )}
 
       {snapshots.length > 0 && (
         <section className="mt-4 rounded-xl border-2 border-nexus-steel/15 bg-white p-4">

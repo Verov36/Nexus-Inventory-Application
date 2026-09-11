@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
 
-const assignSchema = z.object({ techId: z.string().nullable() });
+const assignSchema = z.object({ techId: z.string().min(1).nullable() });
 
 export async function POST(req: NextRequest, { params }: { params: { truckId: string } }) {
   const session = await auth();
@@ -12,9 +12,29 @@ export async function POST(req: NextRequest, { params }: { params: { truckId: st
     return NextResponse.json({ error: "Only a manager or admin can assign techs to trucks" }, { status: 403 });
   }
 
-  const parsed = assignSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = assignSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const existing = await prisma.truck.findUnique({ where: { id: params.truckId } });
+  if (!existing) return NextResponse.json({ error: "Truck not found" }, { status: 404 });
+  if (parsed.data.techId && !existing.active) {
+    return NextResponse.json({ error: "Reactivate this truck before assigning a tech to it." }, { status: 409 });
+  }
+
+  if (parsed.data.techId) {
+    const tech = await prisma.user.findUnique({ where: { id: parsed.data.techId }, select: { role: true } });
+    if (!tech) return NextResponse.json({ error: "That user no longer exists" }, { status: 404 });
+    if (tech.role !== "TRUCK_TECH") {
+      return NextResponse.json({ error: "Only a Truck Tech can be assigned to a truck" }, { status: 409 });
+    }
   }
 
   const truck = await prisma.$transaction(async (tx) => {

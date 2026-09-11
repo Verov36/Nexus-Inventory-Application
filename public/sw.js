@@ -4,8 +4,8 @@
 // exists as a fallback so a spotty warehouse wifi connection doesn't throw a
 // raw browser error page, and so the app shell (not the data) loads fast.
 
-const CACHE_NAME = "nexus-inventory-shell-v1";
-const SHELL_ASSETS = ["/", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE_NAME = "nexus-inventory-shell-v2";
+const SHELL_ASSETS = ["/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -27,17 +27,37 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
+  const url = new URL(request.url);
+  const sameOrigin = url.origin === self.location.origin;
+  const isApi = url.pathname.startsWith("/api/");
+
+  // API calls are never cached and never get a fallback: if the network is
+  // down, the page's own fetch() must see a real failure so it can tell the
+  // user, instead of receiving a cached HTML page it then fails to parse.
+  if (!sameOrigin || isApi) return;
+
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // Only cache same-origin, successful responses for the shell —
-        // never API routes, so nothing dynamic gets served stale.
-        if (response.ok && new URL(request.url).origin === self.location.origin && !request.url.includes("/api/")) {
+        // Only cache successful, basic (non-redirected) responses for the
+        // shell — a redirect to /login cached under "/" would trap signed-in
+        // users on the login page while offline.
+        if (response.ok && response.type === "basic" && !response.redirected) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached ?? caches.match("/")))
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        if (request.mode === "navigate") {
+          return new Response(
+            "<!doctype html><meta charset=utf-8><title>Offline</title><body style=\"font-family:system-ui;padding:2rem\"><h1>You're offline</h1><p>Nexus Inventory needs a connection to load live stock counts. Reconnect and try again.</p></body>",
+            { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        }
+        return Response.error();
+      })
   );
 });

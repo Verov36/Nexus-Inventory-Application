@@ -3,13 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
-import { adjustTruckStock, getTruckStock } from "@/lib/inventory";
+import { InsufficientStockError, adjustTruckStock, getTruckStock } from "@/lib/inventory";
 
 const adjustSchema = z.object({
   partId: z.string().min(1),
   truckId: z.string().min(1),
   quantity: z.number().int().positive(),
-  reason: z.string().min(1),
+  reason: z.string().trim().min(1),
 });
 
 // POST /api/inventory/adjust
@@ -19,19 +19,31 @@ const adjustSchema = z.object({
 // trail.
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  if (!canManageTrucksAndLimits((session.user as { role?: string }).role)) {
     return NextResponse.json(
       { error: "Only a manager or admin can write off truck stock" },
       { status: 403 }
     );
   }
-  const userId = session!.user!.id!;
+  const userId = session.user.id;
 
-  const parsed = adjustSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = adjustSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { partId, truckId, quantity, reason } = parsed.data;
+
+  const truck = await prisma.truck.findUnique({ where: { id: truckId }, select: { id: true } });
+  if (!truck) return NextResponse.json({ error: "Truck not found" }, { status: 404 });
 
   const truckStock = await getTruckStock(partId, truckId);
   if (!truckStock || truckStock.quantity < quantity) {
@@ -41,20 +53,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    await adjustTruckStock(tx, partId, truckId, -quantity);
-    return tx.inventoryTransaction.create({
-      data: {
-        type: "ADJUSTMENT",
-        partId,
-        quantity,
-        fromLocationType: "TRUCK",
-        fromTruckId: truckId,
-        performedById: userId,
-        notes: reason,
-      },
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      await adjustTruckStock(tx, partId, truckId, -quantity);
+      return tx.inventoryTransaction.create({
+        data: {
+          type: "ADJUSTMENT",
+          partId,
+          quantity,
+          fromLocationType: "TRUCK",
+          fromTruckId: truckId,
+          performedById: userId,
+          notes: reason,
+        },
+      });
     });
-  });
 
-  return NextResponse.json({ transaction: result }, { status: 201 });
+    return NextResponse.json({ transaction: result }, { status: 201 });
+  } catch (err) {
+    if (err instanceof InsufficientStockError) {
+      return NextResponse.json(
+        { error: `Only ${err.available} of this part is on the truck — can't remove more than that.` },
+        { status: 409 }
+      );
+    }
+    console.error("Write-off failed:", err);
+    return NextResponse.json({ error: "Something went wrong recording this write-off — try again." }, { status: 500 });
+  }
 }

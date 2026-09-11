@@ -18,9 +18,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     );
   }
 
-  const parsed = reviewSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
+  }
+  const parsed = reviewSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const existing = await prisma.overageJustification.findUnique({ where: { id: params.id } });
+  if (!existing) return NextResponse.json({ error: "Justification not found" }, { status: 404 });
+  if (existing.status !== "PENDING") {
+    // Two managers reviewing the same list at once — second decision loses,
+    // and gets told so rather than silently flipping the first one.
+    return NextResponse.json(
+      { error: `This justification was already ${existing.status.toLowerCase()}.`, justification: existing },
+      { status: 409 }
+    );
   }
 
   const justification = await prisma.overageJustification.update({

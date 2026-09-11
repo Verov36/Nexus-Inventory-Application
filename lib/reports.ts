@@ -1,16 +1,9 @@
 import { prisma } from "@/lib/prisma";
 
+// `to` is exclusive — callers pass the start of the day *after* the last day
+// they want included, so a whole final day is never silently dropped.
 export async function generateUsageSummary(from: Date, to: Date) {
-  const rows = await prisma.inventoryTransaction.findMany({
-    where: { type: "CHECKOUT", createdAt: { gte: from, lte: to } },
-    include: {
-      part: true,
-      performedBy: { select: { name: true } },
-      partUsage: { include: { job: true } },
-      justification: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const rows = await getTransactionRows(from, to);
 
   const jobUse = rows.filter((r) => r.checkoutType === "JOB_USE");
   const restock = rows.filter((r) => r.checkoutType === "RESTOCK");
@@ -44,7 +37,7 @@ export async function generateUsageSummary(from: Date, to: Date) {
 
 export async function getTransactionRows(from: Date, to: Date) {
   return prisma.inventoryTransaction.findMany({
-    where: { type: "CHECKOUT", createdAt: { gte: from, lte: to } },
+    where: { type: "CHECKOUT", createdAt: { gte: from, lt: to } },
     include: {
       part: true,
       performedBy: { select: { name: true } },
@@ -59,7 +52,9 @@ function groupBy<T>(items: T[], keyFn: (item: T) => string): [string, T[]][] {
   const map = new Map<string, T[]>();
   for (const item of items) {
     const key = keyFn(item);
-    map.set(key, [...(map.get(key) ?? []), item]);
+    const bucket = map.get(key);
+    if (bucket) bucket.push(item);
+    else map.set(key, [item]);
   }
   return Array.from(map.entries());
 }
