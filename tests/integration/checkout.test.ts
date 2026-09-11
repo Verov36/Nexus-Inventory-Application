@@ -72,13 +72,20 @@ describe.skipIf(!hasDatabase)("performCheckout (real database)", () => {
     if (!result.ok) expect(result.status).toBe(400);
   });
 
-  it("only lets a tech load their own truck; a manager can load any", async () => {
+  it("only lets a tech load their own truck; an admin can load any; a manager can't check out at all", async () => {
     const asTech = await checkout({ truckId: s.otherTruck.id });
     expect(asTech.ok).toBe(false);
     if (!asTech.ok) expect(asTech.status).toBe(403);
 
+    // Managers set caps and review justifications; loading trucks isn't
+    // their role (see canCheckoutToTruck in lib/roles.ts).
     const asManager = await checkout({ truckId: s.otherTruck.id, userId: s.manager.id, role: "MANAGER" });
-    expect(asManager.ok).toBe(true);
+    expect(asManager.ok).toBe(false);
+    if (!asManager.ok) expect(asManager.status).toBe(403);
+
+    const asAdmin = await checkout({ truckId: s.otherTruck.id, userId: s.manager.id, role: "ADMIN" });
+    expect(asAdmin.ok).toBe(true);
+    expect(await truckQty(s.capacitor.id, s.otherTruck.id)).toBe(2);
   });
 
   it("refuses a deactivated truck and a role that can't check out", async () => {

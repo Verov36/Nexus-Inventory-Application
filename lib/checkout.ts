@@ -58,8 +58,9 @@ export async function performCheckout(req: CheckoutRequest): Promise<CheckoutOut
   const truck = await prisma.truck.findUnique({ where: { id: truckId } });
   if (!truck) return fail(404, { error: "Truck not found" });
   if (!truck.active) return fail(409, { error: `${truck.label} is deactivated — pick an active truck.` });
-  // A tech can only load their own truck. Managers/admins can load any truck
-  // (covering a tech's truck while they're out, or a spare).
+  // A tech can only load their own truck. Admins (who passed the
+  // canCheckoutToTruck check above) can load any truck — covering a tech's
+  // truck while they're out, or a spare.
   if (!canManageTrucksAndLimits(role) && truck.techId !== userId) {
     return fail(403, {
       error: "You can only check parts out to the truck assigned to you. Ask a manager to assign it.",
