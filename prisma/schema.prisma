@@ -40,6 +40,13 @@ enum JustificationStatus {
   REJECTED
 }
 
+enum TruckCountStatus {
+  OPEN       // being counted
+  SUBMITTED  // tech finished; waiting for a manager to apply or discard
+  APPLIED    // variances posted as ADJUSTMENT transactions
+  DISCARDED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -56,6 +63,8 @@ model User {
   transactions       InventoryTransaction[] @relation("PerformedBy")
   justifications      OverageJustification[] @relation("SubmittedBy")
   reviewedJustifications OverageJustification[] @relation("ReviewedBy")
+  startedCounts      TruckCount[] @relation("CountStartedBy")
+  reviewedCounts     TruckCount[] @relation("CountReviewedBy")
 }
 
 model Part {
@@ -82,6 +91,7 @@ model Part {
   stockLevels    StockLevel[]
   truckLimits    TruckStockLimit[]
   transactions   InventoryTransaction[]
+  countLines     TruckCountLine[]
 }
 
 model Warehouse {
@@ -103,6 +113,40 @@ model Truck {
   stockLevels StockLevel[]
   stockLimits TruckStockLimit[]
   justifications OverageJustification[]
+  counts      TruckCount[]
+}
+
+// A physical count of one truck. Lines snapshot what the system expected
+// when the count started; the tech fills in what they actually found. A
+// manager applies the variances (posting ADJUSTMENT transactions) or
+// discards the count.
+model TruckCount {
+  id           String           @id @default(cuid())
+  truckId      String
+  truck        Truck            @relation(fields: [truckId], references: [id])
+  startedById  String
+  startedBy    User             @relation("CountStartedBy", fields: [startedById], references: [id])
+  status       TruckCountStatus @default(OPEN)
+  notes        String?
+  createdAt    DateTime         @default(now())
+  submittedAt  DateTime?
+  reviewedById String?
+  reviewedBy   User?            @relation("CountReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+
+  lines TruckCountLine[]
+}
+
+model TruckCountLine {
+  id          String     @id @default(cuid())
+  countId     String
+  count       TruckCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  partId      String
+  part        Part       @relation(fields: [partId], references: [id])
+  expectedQty Int
+  countedQty  Int?
+
+  @@unique([countId, partId])
 }
 
 // Current on-hand quantity for a part at a given location (warehouse or truck)

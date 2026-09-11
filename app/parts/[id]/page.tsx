@@ -36,6 +36,8 @@ type Transaction = {
   direction: "increase" | "decrease";
   toWarehouseId: string | null;
   fromWarehouseId: string | null;
+  toTruckId: string | null;
+  fromTruckId: string | null;
 };
 
 export default function PartDetailPage() {
@@ -349,7 +351,11 @@ export default function PartDetailPage() {
                   {t.type === "CHECKOUT" && (t.checkoutType === "RESTOCK" ? "Truck restock" : "Job checkout")}
                   {t.type === "RETURN" && "Returned to warehouse"}
                   {t.type === "ADJUSTMENT" &&
-                    (t.toWarehouseId || t.fromWarehouseId ? "Warehouse count correction" : "Written off")}
+                    (t.toWarehouseId || t.fromWarehouseId
+                      ? "Warehouse count correction"
+                      : t.toTruckId || t.notes?.startsWith("Truck count")
+                        ? "Truck count correction"
+                        : "Written off")}
                   {t.partUsage ? ` · Job ${t.partUsage.job.jobNumber}` : ""}
                 </p>
                 <p className="text-nexus-steel">

@@ -9,6 +9,7 @@ import {
   ScanLine,
   Truck,
   ClipboardList,
+  ClipboardCheck,
   AlertTriangle,
   BarChart3,
   Users,
@@ -55,7 +56,14 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/warehouse/reorder", label: "Reorder list", icon: ShoppingCart, visible: (role) => canEditParts(role) },
   { href: "/truck/checkout", label: "Truck checkout", icon: Truck, visible: (role) => canCheckoutToTruck(role) },
   { href: "/truck/inventory", label: "Truck inventory", icon: ClipboardList, visible: (role) => canViewFleet(role) },
+  {
+    href: "/truck/count",
+    label: "Truck count",
+    icon: ClipboardCheck,
+    visible: (role) => canCheckoutToTruck(role) || canManageTrucksAndLimits(role),
+  },
   { href: "/manager/trucks", label: "Manage trucks", icon: Truck, visible: (role) => canManageTrucksAndLimits(role) },
+  { href: "/manager/counts", label: "Count reviews", icon: ClipboardCheck, visible: (role) => canManageTrucksAndLimits(role) },
   {
     href: "/manager/justifications",
     label: "Overage justifications",
