@@ -3,18 +3,18 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { performCheckout } from "@/lib/checkout";
 
-// POST /api/inventory/checkout — single-part checkout. Kept for older
-// clients; the cart checkout at /api/inventory/checkout/batch is the same
-// logic for many parts at once.
-const checkoutSchema = z
+// POST /api/inventory/checkout/batch — check a whole cart out to a truck
+// in one transaction. Either every line moves or nothing does.
+const batchSchema = z
   .object({
-    partId: z.string().min(1),
     truckId: z.string().min(1),
     warehouseId: z.string().optional().nullable(),
-    quantity: z.number().int().positive(),
     checkoutType: z.enum(["JOB_USE", "RESTOCK"]),
     jobNumber: z.string().trim().optional(),
-    // Only present when the tech is resolving a limit block on this same request
+    items: z
+      .array(z.object({ partId: z.string().min(1), quantity: z.number().int().positive() }))
+      .min(1)
+      .max(200),
     justification: z
       .object({
         explanation: z.string().trim().min(1),
@@ -39,21 +39,16 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Request body must be JSON" }, { status: 400 });
   }
-  const parsed = checkoutSchema.safeParse(body);
+  const parsed = batchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { partId, quantity, ...rest } = parsed.data;
 
   const outcome = await performCheckout({
     userId: session.user.id,
     role: (session.user as { role?: string }).role,
-    ...rest,
-    items: [{ partId, quantity }],
+    ...parsed.data,
   });
 
-  if (outcome.ok) {
-    return NextResponse.json({ transaction: outcome.body.transactions[0] }, { status: 201 });
-  }
   return NextResponse.json(outcome.body, { status: outcome.status });
 }
