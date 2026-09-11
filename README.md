@@ -104,8 +104,19 @@ ask an admin.
 **Labels without a Zebra printer.** `/warehouse/labels` prints QR labels on
 standard 30-per-sheet address labels (Avery 5160 / 8160) from any printer.
 
-`npm run typecheck` runs the TypeScript compiler over the whole app; run it
-before pushing.
+## Tests
+
+```bash
+npm run typecheck     # TypeScript over the whole app
+npm run test:unit     # pure logic: checkout planning, caps, money, counts — no database
+npm test              # unit + integration; integration needs TEST_DATABASE_URL
+```
+
+Integration tests run the real checkout / return / write-off / count code
+against Postgres and truncate every table between tests, so point
+`TEST_DATABASE_URL` at a scratch database only. GitHub Actions
+(`.github/workflows/ci.yml`) runs the whole suite plus a production build on
+every push and pull request, with its own throwaway Postgres.
 
 ## Deploying / applying migrations on Railway
 
