@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { canCheckoutToTruck, canManageTrucksAndLimits } from "@/lib/roles";
 import { findApplicableLimit } from "@/lib/limits";
+import { formatMoney, money, toNumber } from "@/lib/money";
 
 type StockItem = {
-  part: { id: string; sku: string; name: string; category: string | null };
+  part: { id: string; sku: string; name: string; category: string | null; unitCost: string | number | null };
   quantity: number;
   jobQuantity: number;
   restockQuantity: number;
@@ -150,11 +151,21 @@ export default function TruckInventoryPage() {
           // pull stock off their own truck, managers/admins off any truck.
           const canReturn =
             canManageTrucksAndLimits(role) || (canCheckoutToTruck(role) && !!userId && truck.techId === userId);
+          const truckValue = money(
+            truck.stockLevels.reduce((sum, sl) => sum + sl.quantity * toNumber(sl.part.unitCost), 0)
+          );
           return (
             <div key={truck.id} className={`rounded-xl border-2 border-nexus-steel/15 bg-white p-4 ${truck.active ? "" : "opacity-60"}`}>
-              <p className="text-lg font-medium text-nexus-navy">
-                {truck.label} {!truck.active && <span className="text-sm text-nexus-steel">(deactivated)</span>}
-              </p>
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-lg font-medium text-nexus-navy">
+                  {truck.label} {!truck.active && <span className="text-sm text-nexus-steel">(deactivated)</span>}
+                </p>
+                {canWriteOff && truck.stockLevels.length > 0 && (
+                  <p className="font-data text-sm text-nexus-steel" title="Value of stock on this truck at current unit costs">
+                    {formatMoney(truckValue)}
+                  </p>
+                )}
+              </div>
 
               {grouped.length === 0 && <p className="mt-2 text-sm text-nexus-steel">Nothing checked out to this truck yet.</p>}
 

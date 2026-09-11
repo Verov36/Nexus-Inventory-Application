@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { canEditParts, canReceiveWarehouseStock } from "@/lib/roles";
 import { printLabel } from "@/lib/zebra-print";
+import { formatMoney } from "@/lib/money";
 
 type Part = {
   id: string;
@@ -43,7 +44,7 @@ export default function PartDetailPage() {
 
   const [part, setPart] = useState<Part | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [form, setForm] = useState({ name: "", category: "", reorderThreshold: "" });
+  const [form, setForm] = useState({ name: "", category: "", reorderThreshold: "", unitCost: "", description: "" });
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
@@ -59,6 +60,8 @@ export default function PartDetailPage() {
             name: d.part.name,
             category: d.part.category ?? "",
             reorderThreshold: String(d.part.reorderThreshold),
+            unitCost: d.part.unitCost === null || d.part.unitCost === undefined ? "" : String(d.part.unitCost),
+            description: d.part.description ?? "",
           });
         }
       });
@@ -68,26 +71,43 @@ export default function PartDetailPage() {
   }, [params.id]);
 
   async function save() {
-    setSaving(true);
-    setError(null);
-    const res = await fetch(`/api/parts/${params.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: form.name,
-        category: form.category || null,
-        reorderThreshold: Number(form.reorderThreshold),
-      }),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      const data = await res.json();
-      setError(typeof data.error === "string" ? data.error : "Couldn't save.");
+    const threshold = Number(form.reorderThreshold);
+    if (!Number.isInteger(threshold) || threshold < 0) {
+      setError("Reorder threshold must be a whole number of 0 or more.");
       return;
     }
-    const data = await res.json();
-    setPart(data.part);
-    setEditing(false);
+    const costText = form.unitCost.trim().replace(/^\$/, "");
+    const unitCost = costText === "" ? null : Number(costText);
+    if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0)) {
+      setError("Unit cost must be a number of 0 or more, or left blank.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/parts/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          category: form.category.trim() || null,
+          reorderThreshold: threshold,
+          unitCost,
+          description: form.description.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : `Couldn't save (${res.status}).`);
+        return;
+      }
+      setPart(data.part);
+      setEditing(false);
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handlePrint() {
@@ -148,8 +168,20 @@ export default function PartDetailPage() {
               </div>
               <div>
                 <dt className="text-nexus-steel">Barcode value</dt>
-                <dd className="font-medium text-nexus-navy">{part.barcodeValue}</dd>
+                <dd className="font-data font-medium text-nexus-navy">{part.barcodeValue}</dd>
               </div>
+              <div>
+                <dt className="text-nexus-steel">Unit cost</dt>
+                <dd className="font-data font-medium text-nexus-navy">
+                  {part.unitCost === null ? <span className="text-nexus-warn">not set</span> : formatMoney(Number(part.unitCost))}
+                </dd>
+              </div>
+              {part.description && (
+                <div>
+                  <dt className="text-nexus-steel">Description</dt>
+                  <dd className="text-nexus-navy">{part.description}</dd>
+                </div>
+              )}
             </dl>
             {editable && (
               <button
@@ -174,22 +206,47 @@ export default function PartDetailPage() {
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-steel/30 px-3"
             />
-            <label className="mt-3 block text-xs text-nexus-steel">Reorder threshold</label>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <div>
+                <label className="block text-xs text-nexus-steel">Reorder threshold</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  value={form.reorderThreshold}
+                  onChange={(e) => setForm({ ...form, reorderThreshold: e.target.value })}
+                  className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-nexus-steel">Unit cost ($)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={form.unitCost}
+                  onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
+                  placeholder="0.00"
+                  className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3 font-data"
+                />
+              </div>
+            </div>
+            <label className="mt-3 block text-xs text-nexus-steel">Description (optional)</label>
             <input
-              type="number"
-              min={0}
-              value={form.reorderThreshold}
-              onChange={(e) => setForm({ ...form, reorderThreshold: e.target.value })}
-              className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-steel/30 px-3"
             />
             {error && <p className="mt-2 text-sm text-nexus-danger">{error}</p>}
             <div className="mt-4 flex gap-2">
               <button
                 onClick={save}
-                disabled={saving}
+                disabled={saving || !form.name.trim()}
                 className="tap-target flex-1 rounded-lg bg-nexus-ok font-medium text-white disabled:opacity-40"
               >
-                Save
+                {saving ? "Saving…" : "Save"}
               </button>
               <button
                 onClick={() => setEditing(false)}

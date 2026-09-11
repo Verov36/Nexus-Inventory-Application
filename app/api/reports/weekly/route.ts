@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canRunReports } from "@/lib/roles";
 import { generateUsageSummary, getTransactionRows } from "@/lib/reports";
+import { money, toNumber } from "@/lib/money";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -49,14 +50,28 @@ export async function GET(req: NextRequest) {
 }
 
 function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
-  const header = ["Date", "Tech", "SKU", "Part", "Quantity", "Checkout type", "Job number", "Flagged overage"];
+  const header = [
+    "Date",
+    "Tech",
+    "SKU",
+    "Part",
+    "Quantity",
+    "Unit cost",
+    "Line cost",
+    "Checkout type",
+    "Job number",
+    "Flagged overage",
+  ];
   const lines = rows.map((r) => {
+    const unitCost = r.part?.unitCost === null || r.part?.unitCost === undefined ? null : toNumber(r.part.unitCost);
     return [
       new Date(r.createdAt).toISOString(),
       r.performedBy?.name ?? "",
       r.part?.sku ?? "",
       r.part?.name ?? "",
       r.quantity,
+      unitCost === null ? "" : unitCost.toFixed(2),
+      unitCost === null ? "" : money(r.quantity * unitCost).toFixed(2),
       r.checkoutType ?? "",
       r.partUsage?.job?.jobNumber ?? "",
       r.justification ? r.justification.status : "",

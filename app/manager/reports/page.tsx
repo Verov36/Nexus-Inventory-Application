@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatMoney } from "@/lib/money";
 
 type Summary = {
   range: { from: string; to: string };
@@ -8,9 +9,18 @@ type Summary = {
   jobUseCount: number;
   restockCount: number;
   flaggedOverages: number;
-  byTech: { tech: string; partsCheckedOut: number; jobUseCount: number; restockCount: number }[];
-  byPart: { sku: string; part: string; quantity: number }[];
-  byJob: { jobNumber: string; parts: { sku: string; part: string; quantity: number }[] }[];
+  totalCost?: number;
+  jobUseCost?: number;
+  restockCost?: number;
+  uncostedLines?: number;
+  byTech: { tech: string; partsCheckedOut: number; jobUseCount: number; restockCount: number; cost?: number }[];
+  byPart: { sku: string; part: string; quantity: number; unitCost?: number | null; cost?: number }[];
+  byJob: {
+    jobNumber: string;
+    customer?: string | null;
+    cost?: number;
+    parts: { sku: string; part: string; quantity: number; cost?: number }[];
+  }[];
 };
 
 type Schedule = { id: string; frequencyDays: number; lastRunAt: string | null; nextRunAt: string };
@@ -202,15 +212,31 @@ export default function ReportsPage() {
             <Stat label="Restock" value={summary.restockCount} />
             <Stat label="Flagged overages" value={summary.flaggedOverages} />
           </div>
+          {summary.totalCost !== undefined && (
+            <div>
+              <div className="grid grid-cols-3 gap-3">
+                <Stat label="Parts cost" value={formatMoney(summary.totalCost)} />
+                <Stat label="On jobs" value={formatMoney(summary.jobUseCost ?? 0)} />
+                <Stat label="Restock" value={formatMoney(summary.restockCost ?? 0)} />
+              </div>
+              {(summary.uncostedLines ?? 0) > 0 && (
+                <p className="mt-2 text-xs text-nexus-warn">
+                  {summary.uncostedLines} {summary.uncostedLines === 1 ? "line has" : "lines have"} a part with no unit cost
+                  on file and counted as $0 — set costs on the part pages to make these totals complete.
+                </p>
+              )}
+            </div>
+          )}
 
           <section>
             <h2 className="text-sm font-medium text-nexus-steel">By tech</h2>
             <ul className="mt-2 divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
               {summary.byTech.map((t, i) => (
-                <li key={i} className="flex justify-between px-4 py-2 text-sm">
+                <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
                   <span>{t.tech}</span>
-                  <span>
+                  <span className="text-right">
                     {t.partsCheckedOut} parts ({t.jobUseCount} job, {t.restockCount} restock)
+                    {t.cost !== undefined && <span className="ml-2 font-data text-nexus-navy">{formatMoney(t.cost)}</span>}
                   </span>
                 </li>
               ))}
@@ -221,11 +247,18 @@ export default function ReportsPage() {
             <h2 className="text-sm font-medium text-nexus-steel">By part</h2>
             <ul className="mt-2 divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
               {summary.byPart.map((p, i) => (
-                <li key={i} className="flex justify-between px-4 py-2 text-sm">
+                <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
                   <span>
                     {p.part} <span className="font-data text-xs text-nexus-steel">({p.sku})</span>
                   </span>
-                  <span>{p.quantity}</span>
+                  <span className="text-right">
+                    {p.quantity}
+                    {p.cost !== undefined && (
+                      <span className="ml-2 font-data text-nexus-navy">
+                        {p.unitCost === null ? "no cost" : formatMoney(p.cost)}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -236,7 +269,13 @@ export default function ReportsPage() {
             <ul className="mt-2 divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
               {summary.byJob.map((j, i) => (
                 <li key={i} className="px-4 py-2 text-sm">
-                  <p className="font-medium">{j.jobNumber}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">
+                      {j.jobNumber}
+                      {j.customer && <span className="ml-2 font-normal text-nexus-steel">{j.customer}</span>}
+                    </p>
+                    {j.cost !== undefined && <span className="font-data text-nexus-navy">{formatMoney(j.cost)}</span>}
+                  </div>
                   <p className="text-nexus-steel">
                     {j.parts.map((p) => `${p.part} (${p.sku}) ×${p.quantity}`).join(", ")}
                   </p>
@@ -250,7 +289,7 @@ export default function ReportsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-xl border-2 border-nexus-steel/15 bg-white p-4 text-center">
       <p className="text-2xl font-medium text-nexus-navy">{value}</p>

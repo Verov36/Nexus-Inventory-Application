@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Boxes, Package, AlertTriangle, Download, ScanLine, Search, ClipboardEdit } from "lucide-react";
+import { Boxes, Package, AlertTriangle, Download, ScanLine, Search, ClipboardEdit, DollarSign } from "lucide-react";
 import { canEditParts, canReceiveWarehouseStock, canViewWarehouseInventory } from "@/lib/roles";
+import { formatMoney } from "@/lib/money";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -21,6 +22,8 @@ type InventoryItem = {
   quantity: number;
   reorderThreshold: number;
   lowStock: boolean;
+  unitCost: number | null;
+  value: number;
   updatedAt: string;
 };
 
@@ -43,6 +46,7 @@ export default function InventoryHomePage() {
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [totalValue, setTotalValue] = useState(0);
   const [editingThresholdId, setEditingThresholdId] = useState<string | null>(null);
   const [thresholdValue, setThresholdValue] = useState("");
   const [bulkPercent, setBulkPercent] = useState("20");
@@ -69,6 +73,7 @@ export default function InventoryHomePage() {
           return;
         }
         setItems(d.items ?? []);
+        setTotalValue(d.totalValue ?? 0);
       })
       .catch(() => setLoadError("Couldn't reach the server — check your connection."))
       .finally(() => setLoading(false));
@@ -200,9 +205,10 @@ export default function InventoryHomePage() {
         </Card>
       )}
 
-      <div className="mt-5 grid grid-cols-3 gap-3">
+      <div className={`mt-5 grid gap-3 ${editable ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
         <StatCard icon={<Package size={18} />} label="Parts tracked" value={items.length} />
         <StatCard icon={<Boxes size={18} />} label="Total units" value={totalUnits} />
+        {editable && <StatCard icon={<DollarSign size={18} />} label="Stock value" value={formatMoney(totalValue)} />}
         <button onClick={() => setLowStockOnly((v) => !v)} className="text-left">
           <StatCard
             icon={<AlertTriangle size={18} />}
@@ -402,7 +408,7 @@ function StatCard({
 }: {
   icon: React.ReactNode;
   label: string;
-  value: number;
+  value: number | string;
   tone?: "neutral" | "danger";
   active?: boolean;
 }) {
