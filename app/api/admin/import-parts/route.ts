@@ -7,7 +7,8 @@ import { resolveWarehouseId } from "@/lib/inventory";
 /**
  * POST /api/admin/import-parts
  * Body: { csv: string, warehouseId?: string }
- * Expected header row: sku,name,barcodeValue,category,unitCost,reorderThreshold,initialQuantity
+ * Expected header row: sku,name,barcodeValue,category,unitCost,reorderThreshold,initialQuantity,
+ *                      supplier,supplierPartNumber,reorderQty
  * Only sku, name, and barcodeValue are required per row. If initialQuantity is
  * present and > 0, a warehouse StockLevel and a RECEIVE transaction are
  * created too — otherwise the part exists in the catalog with zero stock,
@@ -57,6 +58,9 @@ export async function POST(req: NextRequest) {
     unitCost: header.indexOf("unitcost"),
     reorderThreshold: header.indexOf("reorderthreshold"),
     initialQuantity: header.indexOf("initialquantity"),
+    supplier: header.indexOf("supplier"),
+    supplierPartNumber: header.indexOf("supplierpartnumber"),
+    reorderQty: header.indexOf("reorderqty"),
   };
 
   let warehouseId: string | null = null;
@@ -121,6 +125,15 @@ export async function POST(req: NextRequest) {
       results.skipped.push({ line: i + 1, reason: `initialQuantity "${cols[idx.initialQuantity]}" must be a whole number ≥ 0` });
       continue;
     }
+    const supplierRaw = idx.supplier >= 0 ? cols[idx.supplier]?.trim() : undefined;
+    const supplier = idx.supplier >= 0 ? supplierRaw || null : undefined;
+    const supplierPartNumberRaw = idx.supplierPartNumber >= 0 ? cols[idx.supplierPartNumber]?.trim() : undefined;
+    const supplierPartNumber = idx.supplierPartNumber >= 0 ? supplierPartNumberRaw || null : undefined;
+    const reorderQty = parseOptionalNumber(idx.reorderQty >= 0 ? cols[idx.reorderQty] : undefined);
+    if (reorderQty === "invalid" || (typeof reorderQty === "number" && (reorderQty < 0 || !Number.isInteger(reorderQty)))) {
+      results.skipped.push({ line: i + 1, reason: `reorderQty "${cols[idx.reorderQty]}" must be a whole number ≥ 0` });
+      continue;
+    }
 
     try {
       // Another part already owning this barcode (under a different SKU)
@@ -143,6 +156,9 @@ export async function POST(req: NextRequest) {
             ...(category !== undefined ? { category } : {}),
             ...(unitCost !== undefined ? { unitCost } : {}),
             ...(reorderThreshold !== undefined ? { reorderThreshold } : {}),
+            ...(supplier !== undefined ? { supplier } : {}),
+            ...(supplierPartNumber !== undefined ? { supplierPartNumber } : {}),
+            ...(reorderQty !== undefined ? { reorderQty } : {}),
           },
         });
         partId = updated.id;
@@ -156,6 +172,9 @@ export async function POST(req: NextRequest) {
             category: category ?? undefined,
             unitCost: unitCost ?? undefined,
             reorderThreshold: reorderThreshold ?? 0,
+            supplier: supplier ?? undefined,
+            supplierPartNumber: supplierPartNumber ?? undefined,
+            reorderQty: reorderQty ?? 0,
           },
         });
         partId = created.id;

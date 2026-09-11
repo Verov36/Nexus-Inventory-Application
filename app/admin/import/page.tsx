@@ -61,7 +61,8 @@ export default function ImportPage() {
       <div className="mt-4 rounded-xl border-2 border-nexus-steel/15 bg-white p-4">
         <p className="text-sm text-nexus-steel">
           Required columns: <code>sku, name, barcodeValue</code>. Optional: <code>category, unitCost,
-          reorderThreshold</code>. Existing SKUs are updated; new SKUs are created.
+          reorderThreshold, supplier, supplierPartNumber, reorderQty</code>. Existing SKUs are updated (only the
+          columns present in the file change); new SKUs are created.
         </p>
         <p className="mt-2 text-sm text-nexus-steel">
           Add an <code>initialQuantity</code> column if you want the import to also stock the warehouse —

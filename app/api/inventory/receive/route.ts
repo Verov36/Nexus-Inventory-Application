@@ -76,6 +76,15 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // The order this receipt fulfils is done — take it off the reorder
+      // list's "on order" state.
+      if (part.orderedAt) {
+        await tx.part.update({
+          where: { id: partId },
+          data: { orderedAt: null, orderedQty: null, orderedById: null },
+        });
+      }
+
       return { stockLevel, transaction };
     });
 

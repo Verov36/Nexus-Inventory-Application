@@ -67,6 +67,16 @@ model Part {
   unitCost       Decimal? @db.Decimal(10, 2)
   barcodeValue   String   @unique // value encoded in the QR/barcode label
   reorderThreshold Int    @default(0)
+  // Purchasing: who to buy it from, their part number, and how many to
+  // order when it drops to the threshold (0 = let the app suggest).
+  supplier           String?
+  supplierPartNumber String?
+  reorderQty         Int      @default(0)
+  // Set when someone marks it ordered on the reorder list; cleared the next
+  // time the part is received so it stops showing as "on order".
+  orderedAt     DateTime?
+  orderedQty    Int?
+  orderedById   String?
   createdAt      DateTime @default(now())
 
   stockLevels    StockLevel[]

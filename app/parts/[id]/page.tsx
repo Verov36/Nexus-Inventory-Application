@@ -16,6 +16,11 @@ type Part = {
   unitCost: string | null;
   barcodeValue: string;
   reorderThreshold: number;
+  supplier?: string | null;
+  supplierPartNumber?: string | null;
+  reorderQty?: number;
+  orderedAt?: string | null;
+  orderedQty?: number | null;
 };
 
 type Transaction = {
@@ -44,7 +49,16 @@ export default function PartDetailPage() {
 
   const [part, setPart] = useState<Part | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [form, setForm] = useState({ name: "", category: "", reorderThreshold: "", unitCost: "", description: "" });
+  const [form, setForm] = useState({
+    name: "",
+    category: "",
+    reorderThreshold: "",
+    unitCost: "",
+    description: "",
+    supplier: "",
+    supplierPartNumber: "",
+    reorderQty: "",
+  });
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
@@ -62,6 +76,9 @@ export default function PartDetailPage() {
             reorderThreshold: String(d.part.reorderThreshold),
             unitCost: d.part.unitCost === null || d.part.unitCost === undefined ? "" : String(d.part.unitCost),
             description: d.part.description ?? "",
+            supplier: d.part.supplier ?? "",
+            supplierPartNumber: d.part.supplierPartNumber ?? "",
+            reorderQty: String(d.part.reorderQty ?? 0),
           });
         }
       });
@@ -82,6 +99,11 @@ export default function PartDetailPage() {
       setError("Unit cost must be a number of 0 or more, or left blank.");
       return;
     }
+    const reorderQty = form.reorderQty.trim() === "" ? 0 : Number(form.reorderQty);
+    if (!Number.isInteger(reorderQty) || reorderQty < 0) {
+      setError("Reorder quantity must be a whole number of 0 or more (0 lets the app suggest).");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -94,6 +116,9 @@ export default function PartDetailPage() {
           reorderThreshold: threshold,
           unitCost,
           description: form.description.trim() || null,
+          supplier: form.supplier.trim() || null,
+          supplierPartNumber: form.supplierPartNumber.trim() || null,
+          reorderQty,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -176,6 +201,29 @@ export default function PartDetailPage() {
                   {part.unitCost === null ? <span className="text-nexus-warn">not set</span> : formatMoney(Number(part.unitCost))}
                 </dd>
               </div>
+              <div>
+                <dt className="text-nexus-steel">Supplier</dt>
+                <dd className="text-nexus-navy">
+                  {part.supplier || <span className="text-nexus-steel">not set</span>}
+                  {part.supplierPartNumber && (
+                    <span className="ml-1 font-data text-xs text-nexus-steel">#{part.supplierPartNumber}</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-nexus-steel">Reorder quantity</dt>
+                <dd className="font-data text-nexus-navy">
+                  {part.reorderQty ? part.reorderQty : <span className="text-nexus-steel">suggested automatically</span>}
+                </dd>
+              </div>
+              {part.orderedAt && (
+                <div>
+                  <dt className="text-nexus-steel">On order</dt>
+                  <dd className="text-nexus-ok">
+                    {part.orderedQty} ordered {new Date(part.orderedAt).toLocaleDateString()}
+                  </dd>
+                </div>
+              )}
               {part.description && (
                 <div>
                   <dt className="text-nexus-steel">Description</dt>
@@ -230,6 +278,37 @@ export default function PartDetailPage() {
                   onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                   placeholder="0.00"
                   className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3 font-data"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <div className="min-w-[10rem] flex-1">
+                <label className="block text-xs text-nexus-steel">Supplier</label>
+                <input
+                  value={form.supplier}
+                  onChange={(e) => setForm({ ...form, supplier: e.target.value })}
+                  placeholder="e.g. Johnstone Supply"
+                  className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-steel/30 px-3"
+                />
+              </div>
+              <div className="min-w-[10rem] flex-1">
+                <label className="block text-xs text-nexus-steel">Supplier part #</label>
+                <input
+                  value={form.supplierPartNumber}
+                  onChange={(e) => setForm({ ...form, supplierPartNumber: e.target.value })}
+                  className="tap-target mt-1 w-full rounded-lg border-2 border-nexus-steel/30 px-3 font-data"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-nexus-steel">Reorder qty (0 = suggest)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  value={form.reorderQty}
+                  onChange={(e) => setForm({ ...form, reorderQty: e.target.value })}
+                  className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3"
                 />
               </div>
             </div>

@@ -14,6 +14,7 @@ import {
   Users,
   Upload,
   ShieldCheck,
+  ShoppingCart,
   Menu,
   X,
   LogOut,
@@ -22,6 +23,7 @@ import {
 import {
   ROLE_LABELS,
   canCheckoutToTruck,
+  canEditParts,
   canManageTrucksAndLimits,
   canManageUsers,
   canReceiveWarehouseStock,
@@ -50,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: ScanLine,
     visible: (role, canReceiveParts) => canReceiveWarehouseStock(role, canReceiveParts),
   },
+  { href: "/warehouse/reorder", label: "Reorder list", icon: ShoppingCart, visible: (role) => canEditParts(role) },
   { href: "/truck/checkout", label: "Truck checkout", icon: Truck, visible: (role) => canCheckoutToTruck(role) },
   { href: "/truck/inventory", label: "Truck inventory", icon: ClipboardList, visible: (role) => canViewFleet(role) },
   { href: "/manager/trucks", label: "Manage trucks", icon: Truck, visible: (role) => canManageTrucksAndLimits(role) },

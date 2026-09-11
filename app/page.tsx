@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Boxes, Package, AlertTriangle, Download, ScanLine, Search, ClipboardEdit, DollarSign } from "lucide-react";
+import { Boxes, Package, AlertTriangle, Download, ScanLine, Search, ClipboardEdit, DollarSign, ShoppingCart } from "lucide-react";
 import { canEditParts, canReceiveWarehouseStock, canViewWarehouseInventory } from "@/lib/roles";
 import { formatMoney } from "@/lib/money";
 import { Card } from "@/components/ui/Card";
@@ -190,6 +190,13 @@ export default function InventoryHomePage() {
                 {lowStockOnly ? "Export low stock" : "Export"}
               </Button>
             </a>
+            {editable && (
+              <Link href="/warehouse/reorder">
+                <Button variant="secondary" icon={<ShoppingCart size={16} />}>
+                  Reorder{lowStockCount > 0 ? ` (${lowStockCount})` : ""}
+                </Button>
+              </Link>
+            )}
             {canReceive && (
               <Link href="/warehouse/receiving">
                 <Button icon={<ScanLine size={16} />}>Receive parts</Button>

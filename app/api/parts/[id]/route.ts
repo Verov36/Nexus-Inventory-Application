@@ -13,6 +13,9 @@ const updateSchema = z.object({
   unitCost: z.number().nonnegative().optional().nullable(),
   reorderThreshold: z.number().int().min(0).optional(),
   description: z.string().trim().optional().nullable(),
+  supplier: z.string().trim().optional().nullable(),
+  supplierPartNumber: z.string().trim().optional().nullable(),
+  reorderQty: z.number().int().min(0).optional(),
 });
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -56,6 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // otherwise it shows up as its own blank group on the truck inventory page.
   if (data.category === "") data.category = null;
   if (data.description === "") data.description = null;
+  if (data.supplier === "") data.supplier = null;
+  if (data.supplierPartNumber === "") data.supplierPartNumber = null;
 
   const part = await prisma.part.update({ where: { id: params.id }, data });
   return NextResponse.json({ part });
