@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { canEditParts, canReceiveWarehouseStock } from "@/lib/roles";
@@ -175,12 +176,17 @@ export default function PartDetailPage() {
           </p>
         </div>
         {canPrint && (
-          <button
-            onClick={handlePrint}
-            className="tap-target rounded-lg border-2 border-nexus-navy px-4 text-sm font-medium text-nexus-navy"
-          >
-            Print label
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={handlePrint}
+              className="tap-target rounded-lg border-2 border-nexus-navy px-4 text-sm font-medium text-nexus-navy"
+            >
+              Print label (Zebra)
+            </button>
+            <Link href={`/warehouse/labels?ids=${part.id}`} className="text-xs text-nexus-steel underline">
+              or print on a label sheet
+            </Link>
+          </div>
         )}
       </div>
       {printStatus && <p className="mt-1 text-sm text-nexus-steel">{printStatus}</p>}

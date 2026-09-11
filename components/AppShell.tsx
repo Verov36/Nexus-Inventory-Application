@@ -16,6 +16,7 @@ import {
   Upload,
   ShieldCheck,
   ShoppingCart,
+  Tag,
   Menu,
   X,
   LogOut,
@@ -54,6 +55,12 @@ const NAV_ITEMS: NavItem[] = [
     visible: (role, canReceiveParts) => canReceiveWarehouseStock(role, canReceiveParts),
   },
   { href: "/warehouse/reorder", label: "Reorder list", icon: ShoppingCart, visible: (role) => canEditParts(role) },
+  {
+    href: "/warehouse/labels",
+    label: "Label sheets",
+    icon: Tag,
+    visible: (role, canReceiveParts) => canEditParts(role) || canReceiveWarehouseStock(role, canReceiveParts),
+  },
   { href: "/truck/checkout", label: "Truck checkout", icon: Truck, visible: (role) => canCheckoutToTruck(role) },
   { href: "/truck/inventory", label: "Truck inventory", icon: ClipboardList, visible: (role) => canViewFleet(role) },
   {
@@ -97,7 +104,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  if (pathname === "/login") return <>{children}</>;
+  if (["/login", "/setup", "/forgot-password", "/reset-password"].includes(pathname)) return <>{children}</>;
 
   const role = (session?.user as { role?: string; canReceiveParts?: boolean } | undefined)?.role;
   const canReceiveParts = (session?.user as { canReceiveParts?: boolean } | undefined)?.canReceiveParts;
@@ -184,10 +191,10 @@ function UserFooter({ userName, role }: { userName?: string; role?: string }) {
   return (
     <div className="mt-auto border-t border-white/10 pt-4">
       {userName && (
-        <div className="px-1 pb-3">
+        <Link href="/account" className="block rounded-lg px-1 pb-3 hover:bg-white/5" title="Your account">
           <p className="text-sm font-medium text-white">{userName}</p>
           {role && <p className="text-xs text-white/50">{ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role}</p>}
-        </div>
+        </Link>
       )}
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}

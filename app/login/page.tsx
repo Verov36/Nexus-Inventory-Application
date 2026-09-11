@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
@@ -24,6 +25,17 @@ function LoginForm() {
   // the query string.
   const rawCallback = searchParams.get("callbackUrl") ?? "/";
   const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/";
+
+  // A brand-new database has no accounts to sign in with — send the first
+  // visitor to the setup screen instead of a login form that can't work.
+  useEffect(() => {
+    fetch("/api/setup")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.needsSetup) router.replace("/setup");
+      })
+      .catch(() => {});
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,6 +87,9 @@ function LoginForm() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <Link href="/forgot-password" className="text-sm text-nexus-steel underline">
+        Forgot your password?
+      </Link>
     </main>
   );
 }

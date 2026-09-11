@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import ScannerInput from "@/components/ScannerInput";
 import { printLabel } from "@/lib/zebra-print";
 import { PackagePlus, Printer, CheckCircle2 } from "lucide-react";
@@ -246,6 +247,13 @@ export default function ReceivingPage() {
             </Button>
           </div>
           {printStatus && <p className="mt-2 text-sm text-nexus-steel">{printStatus}</p>}
+          <p className="mt-2 text-xs text-nexus-steel">
+            No Zebra printer?{" "}
+            <Link href={`/warehouse/labels?ids=${matchedPart.id}`} className="underline">
+              Print on a label sheet
+            </Link>{" "}
+            from any printer instead.
+          </p>
         </Card>
       )}
 

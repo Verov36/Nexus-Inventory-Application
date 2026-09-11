@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
+// Pages and endpoints reachable without a session.
+const PUBLIC_PAGES = ["/login", "/setup", "/forgot-password", "/reset-password"];
+const PUBLIC_API_PREFIXES = ["/api/auth", "/api/setup", "/api/cron"];
+
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const path = req.nextUrl.pathname;
-  const isLoginPage = path.startsWith("/login");
-  const isAuthApi = path.startsWith("/api/auth");
-  const isCronApi = path.startsWith("/api/cron");
   const isApi = path.startsWith("/api/");
+  const isPublicPage = PUBLIC_PAGES.some((p) => path === p || path.startsWith(`${p}/`));
+  const isPublicApi = PUBLIC_API_PREFIXES.some((p) => path.startsWith(p));
 
-  // The cron endpoint is called by an external scheduler (Railway Cron),
-  // which has no browser session — it authenticates itself via CRON_SECRET
-  // inside the route instead. Without this exclusion, every cron trigger
-  // would get redirected to /login before ever reaching the handler.
-  if (isCronApi) return;
+  // /api/cron authenticates itself with CRON_SECRET (no browser session);
+  // /api/setup is inert once the first user exists; /api/auth is NextAuth
+  // plus the forgot/reset endpoints.
+  if (isPublicApi) return;
 
-  if (!isLoggedIn && !isLoginPage && !isAuthApi) {
+  if (!isLoggedIn && !isPublicPage) {
     // A fetch() from a page whose session expired should get a 401 it can
     // act on, not a 200 HTML login page that blows up in `res.json()`.
     if (isApi) {
@@ -26,8 +28,8 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Already signed in — no reason to show the login form again.
-  if (isLoggedIn && isLoginPage) {
+  // Already signed in — no reason to show the login/setup/reset forms.
+  if (isLoggedIn && (path === "/login" || path === "/setup" || path === "/forgot-password")) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 

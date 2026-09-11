@@ -65,6 +65,19 @@ model User {
   reviewedJustifications OverageJustification[] @relation("ReviewedBy")
   startedCounts      TruckCount[] @relation("CountStartedBy")
   reviewedCounts     TruckCount[] @relation("CountReviewedBy")
+  passwordResetTokens PasswordResetToken[]
+}
+
+// One-time links for "forgot password". Only the SHA-256 of the token is
+// stored, so a database read can't be turned into a working link.
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
 }
 
 model Part {

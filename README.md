@@ -41,8 +41,26 @@ Built mobile/tablet-first.
 
 **Phase 4 — Reporting**
 - `/manager/reports` — pick a date range, see checkouts broken out by tech,
-  part, and job, with job-use vs. restock split out. Download as CSV.
+  part, and job, with job-use vs. restock split out and parts cost (from
+  each part's unit cost) on every line. Download as CSV.
   `app/api/reports/weekly/route.ts`.
+- `/manager/audit` — point-in-time stock across the warehouse and every
+  truck, with dollar value.
+
+**Phase 6 — Daily-use features**
+- **Cart checkout** — `/truck/checkout` builds a load of many parts (scan,
+  tap a usual part, or search by name) and checks it out in one go. Job
+  numbers are picked from recent open jobs.
+- **Reorder list** — `/warehouse/reorder`: every part at or below its
+  reorder point, grouped by supplier, with a suggested quantity, "Mark
+  ordered", and "Copy order" for pasting into an email or PO. Receiving the
+  part clears the on-order flag. Supplier, supplier part # and reorder qty
+  live on the part page and in the mass import.
+- **Truck counts** — `/truck/count`: a tech counts their truck blind (the
+  system's numbers stay hidden), entries autosave, then the count goes to
+  `/manager/counts` where a manager sees variances with dollar value and
+  applies (posting adjustments) or discards.
+- **Setup, passwords, labels** — see Local setup above.
 
 ## Setting up Zebra printing
 
@@ -65,18 +83,26 @@ Built mobile/tablet-first.
 ```bash
 npm install
 cp .env.example .env.local        # fill in DATABASE_URL and AUTH_SECRET
-npx prisma migrate dev            # applies every migration, including the partial unique indexes
-npm run seed                       # creates a warehouse + the super admin login
+npx prisma migrate dev            # applies every migration
 npm run dev
 ```
 
-The seed script prints a warehouse id — put it in `.env.local` as
-`NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID`. (If you skip this the server falls back
-to `DEFAULT_WAREHOUSE_ID`, then to the first warehouse in the database, so
-receiving/checkout still works.)
+Open the app: with an empty database it sends you to `/setup`, where you
+create the first Super Admin account and the warehouse. No seed script or
+env var needed. (`npm run seed` still exists for a demo login —
+`chris@example.com` / `changeme123` — if you'd rather.)
 
-Seed login: `chris@example.com` / `changeme123` — change the password from
-`/admin/users` right after first sign-in.
+`NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID` is optional: the server falls back to
+`DEFAULT_WAREHOUSE_ID`, then to the first warehouse in the database.
+
+**Passwords.** Everyone can change their own under Your account (click your
+name in the sidebar). Admins set a temporary password for anyone from Users
+& permissions. "Forgot password" emails a reset link if `RESEND_API_KEY` and
+`EMAIL_FROM` are set (see `.env.example`); otherwise it tells the person to
+ask an admin.
+
+**Labels without a Zebra printer.** `/warehouse/labels` prints QR labels on
+standard 30-per-sheet address labels (Avery 5160 / 8160) from any printer.
 
 `npm run typecheck` runs the TypeScript compiler over the whole app; run it
 before pushing.
