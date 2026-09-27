@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
 
   const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
   const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash }, include: { user: true } });
-  if (!record || record.usedAt || record.expiresAt < new Date()) {
+  if (!record || record.usedAt || record.expiresAt < new Date() || record.user.disabledAt) {
     return NextResponse.json(
       { error: "This reset link is invalid or has expired. Request a new one from the sign-in page." },
       { status: 400 }
@@ -29,10 +29,27 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
-    prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
-  ]);
+  const consumed = await prisma.$transaction(async (tx) => {
+    // Conditional on usedAt still being null, so two concurrent submissions
+    // of the same link can't both set a password.
+    const claim = await tx.passwordResetToken.updateMany({
+      where: { id: record.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (claim.count === 0) return false;
+    // Anyone holding a session from before the reset is signed out.
+    await tx.user.update({
+      where: { id: record.userId },
+      data: { passwordHash, sessionVersion: { increment: 1 } },
+    });
+    return true;
+  });
+  if (!consumed) {
+    return NextResponse.json(
+      { error: "This reset link has already been used. Request a new one from the sign-in page." },
+      { status: 400 }
+    );
+  }
 
   return NextResponse.json({ ok: true, email: record.user.email });
 }

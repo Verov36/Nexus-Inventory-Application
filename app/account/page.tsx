@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { KeyRound } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -36,8 +36,11 @@ export default function AccountPage() {
         setError(typeof d.error === "string" ? d.error : `Couldn't change the password (${res.status}).`);
         return;
       }
-      setNotice("Password changed.");
+      // Changing the password ends every session for this account,
+      // including this one, so sign back in with the new password.
+      setNotice("Password changed. Signing you out — sign back in with the new password.");
       setForm({ current: "", next: "", confirm: "" });
+      setTimeout(() => signOut({ callbackUrl: "/login" }), 1500);
     } catch {
       setError("Couldn't reach the server — check your connection.");
     } finally {

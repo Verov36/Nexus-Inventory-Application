@@ -57,6 +57,13 @@ model User {
   // (besides the super admin, who always has access) allowed to receive
   // parts. Toggled in /admin/users, capped and enforced server-side.
   canReceiveParts Boolean @default(false)
+  // Set when an admin deactivates the account. A deactivated user can't sign
+  // in and any session they already hold stops working on its next request.
+  // Accounts with history are deactivated, never deleted.
+  disabledAt   DateTime?
+  // Stamped into the session token at sign-in. Bumping it (password change,
+  // reset, deactivation) invalidates every session issued before the bump.
+  sessionVersion Int     @default(0)
   truck        Truck?   @relation("TruckTech")
   createdAt    DateTime @default(now())
 

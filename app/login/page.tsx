@@ -5,6 +5,18 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
+// Only same-origin paths. A prefix check alone lets `/evil.com` through,
+// which browsers normalize to `//evil.com`.
+function safeCallback(raw: string): string {
+  if (typeof window === "undefined") return "/";
+  try {
+    const url = new URL(raw, window.location.origin);
+    return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : "/";
+  } catch {
+    return "/";
+  }
+}
+
 export default function LoginPage() {
   return (
     <Suspense fallback={null}>
@@ -24,7 +36,7 @@ function LoginForm() {
   // Only ever bounce back to a same-site path, never an absolute URL from
   // the query string.
   const rawCallback = searchParams.get("callbackUrl") ?? "/";
-  const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/";
+  const callbackUrl = safeCallback(rawCallback);
 
   // A brand-new database has no accounts to sign in with — send the first
   // visitor to the setup screen instead of a login form that can't work.

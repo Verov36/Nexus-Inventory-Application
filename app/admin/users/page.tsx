@@ -9,6 +9,7 @@ type User = {
   email: string;
   role: string;
   canReceiveParts: boolean;
+  disabledAt: string | null;
   createdAt: string;
 };
 
@@ -32,7 +33,22 @@ export default function UsersPage() {
     load();
   }, []);
 
-  const receiverCount = users.filter((u) => u.canReceiveParts && u.role !== "SUPER_ADMIN").length;
+  const receiverCount = users.filter((u) => u.canReceiveParts && !u.disabledAt && u.role !== "SUPER_ADMIN").length;
+
+  async function changeRole(u: User, role: string) {
+    if (role === u.role) return;
+    const label = ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role;
+    if (!confirm(`Change ${u.name}'s role to ${label}? Their access changes immediately.`)) return;
+    await patchUser(u.id, { role });
+  }
+
+  async function setActive(u: User, active: boolean) {
+    const prompt = active
+      ? `Reactivate ${u.name}? They'll be able to sign in again.`
+      : `Deactivate ${u.name}? They're signed out everywhere right away and can't sign in. Their history is kept, and you can reactivate them later.`;
+    if (!confirm(prompt)) return;
+    await patchUser(u.id, { active });
+  }
 
   async function createUser() {
     setError(null);
@@ -88,7 +104,7 @@ export default function UsersPage() {
   }
 
   async function deleteUser(id: string) {
-    if (!confirm("Remove this user? This can't be undone.")) return;
+    if (!confirm("Permanently delete this user? Only possible for accounts with no history — otherwise deactivate them. This can't be undone.")) return;
     setError(null);
     const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
     if (!res.ok) {
@@ -203,8 +219,15 @@ export default function UsersPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-medium text-nexus-navy">{u.name}</p>
+                  <div className={u.disabledAt ? "opacity-60" : undefined}>
+                    <p className="font-medium text-nexus-navy">
+                      {u.name}
+                      {u.disabledAt && (
+                        <span className="ml-2 rounded-full bg-nexus-steel/15 px-2 py-0.5 text-xs font-medium text-nexus-steel">
+                          Deactivated
+                        </span>
+                      )}
+                    </p>
                     <p className="text-sm text-nexus-steel">{u.email}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -214,7 +237,7 @@ export default function UsersPage() {
                     >
                       Edit
                     </button>
-                    {u.role !== "SUPER_ADMIN" && (
+                    {u.role !== "SUPER_ADMIN" && !u.disabledAt && (
                       <label className="tap-target flex items-center gap-2 rounded-lg border-2 border-nexus-steel/30 px-3 text-sm">
                         <input
                           type="checkbox"
@@ -227,7 +250,8 @@ export default function UsersPage() {
                     )}
                     <select
                       value={u.role}
-                      onChange={(e) => patchUser(u.id, { role: e.target.value })}
+                      aria-label={`Role for ${u.name}`}
+                      onChange={(e) => changeRole(u, e.target.value)}
                       className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm"
                     >
                       {ROLES.map((r) => (
@@ -236,6 +260,12 @@ export default function UsersPage() {
                         </option>
                       ))}
                     </select>
+                    <button
+                      onClick={() => setActive(u, !!u.disabledAt)}
+                      className="tap-target rounded-lg border-2 border-nexus-steel/30 px-3 text-sm text-nexus-navy"
+                    >
+                      {u.disabledAt ? "Reactivate" : "Deactivate"}
+                    </button>
                     <button
                       onClick={() => deleteUser(u.id)}
                       className="tap-target rounded-lg border-2 border-nexus-danger/40 px-3 text-sm text-nexus-danger"

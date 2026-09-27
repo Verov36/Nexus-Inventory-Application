@@ -2,10 +2,21 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { revalidateSession } from "@/lib/session";
+
+// Idle timeout: a session unused for a full shift plus overtime ends. (The
+// cookie is re-issued while it's in use; lib/session.ts also caps the total
+// lifetime, so a lost phone or a leaked cookie can't stay signed in forever.)
+const SESSION_MAX_AGE_SECONDS = Number(process.env.SESSION_MAX_AGE_HOURS || 12) * 60 * 60;
+
+// Compared against when the email doesn't match an account, so a miss takes
+// as long as a wrong password and response timing can't reveal who has an
+// account. (Hash of a random string; nothing can match it.)
+const DUMMY_HASH = "$2a$10$34qhaftCBSp.bLUjf7yC1u0yEkeHah/tNrr1iVkxVlXWvDtTOqyX6";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true, // required behind Railway's reverse proxy, or NextAuth throws a generic "server configuration" error
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS },
   providers: [
     Credentials({
       credentials: {
@@ -18,10 +29,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
-        if (!user) return null;
-
-        const valid = await bcrypt.compare(password, user.passwordHash);
-        if (!valid) return null;
+        const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+        if (!user || !valid || user.disabledAt) return null;
 
         return {
           id: user.id,
@@ -29,41 +38,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           role: user.role,
           canReceiveParts: user.canReceiveParts,
+          sessionVersion: user.sessionVersion,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
         token.role = (user as { role: string }).role;
         token.canReceiveParts = (user as { canReceiveParts: boolean }).canReceiveParts;
+        token.sv = (user as { sessionVersion: number }).sessionVersion;
+        token.authAt = Math.floor(Date.now() / 1000);
         token.name = user.name;
+        return token;
       }
 
-      // The role and receiving flag live in the JWT, so an admin's change in
-      // /admin/users wouldn't show up for the affected person until they
-      // signed out and back in — the nav would keep hiding (or showing)
-      // Receiving, manager screens, etc. The AppShell calls `update()` on
-      // load, which lands here with trigger === "update"; re-read the
-      // database then. This path only runs in the Node runtime (the
-      // /api/auth/session handler) — middleware runs on the edge runtime
-      // where Prisma isn't available, and never sends an "update" trigger.
-      if (trigger === "update" && token.sub && process.env.NEXT_RUNTIME !== "edge") {
-        const fresh = await prisma.user.findUnique({
-          where: { id: token.sub },
-          select: { name: true, role: true, canReceiveParts: true },
-        });
-        if (!fresh) {
-          // Account was deleted — drop the claims so the session stops
-          // granting anything; the next page load bounces to /login.
-          return null;
-        }
-        token.name = fresh.name;
-        token.role = fresh.role;
-        token.canReceiveParts = fresh.canReceiveParts;
-      }
-      return token;
+      // Every later request re-reads the account, so a role change, a
+      // deactivation, or a password reset takes effect on the very next
+      // request — not whenever the JWT happens to expire. A primary-key
+      // lookup per request is cheap next to what the routes themselves do.
+      // Returning null drops the claims; the next page load bounces to /login.
+      if (process.env.NEXT_RUNTIME === "edge") return token;
+      return revalidateSession(token);
     },
     session({ session, token }) {
       if (session.user) {

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await prisma.user.findFirst({ where: { email: { equals: parsed.data.email, mode: "insensitive" } } });
-  if (user) {
+  if (user && !user.disabledAt) {
     const token = randomBytes(32).toString("hex");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     await prisma.$transaction([

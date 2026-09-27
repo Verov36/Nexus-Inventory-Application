@@ -89,9 +89,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const refreshed = useRef(false);
 
-  // Pull the latest role/receiving flag from the database once per page
-  // load (and whenever the tab comes back into focus), so a permission
-  // change an admin just made shows up without the user signing out.
+  // The server re-checks the account on every request; this refreshes the
+  // browser's copy of the session once per page load (and whenever the tab
+  // comes back into focus) so the nav reflects a permission change an admin
+  // just made without the user signing out.
   useEffect(() => {
     if (status !== "authenticated" || refreshed.current) return;
     refreshed.current = true;

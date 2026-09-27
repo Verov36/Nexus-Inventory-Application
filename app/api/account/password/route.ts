@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
   await prisma.$transaction([
-    prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
+    // Signs this account out everywhere, including this browser — the page
+    // sends the person back to sign in with the new password.
+    prisma.user.update({ where: { id: user.id }, data: { passwordHash, sessionVersion: { increment: 1 } } }),
     // Any outstanding reset links for this account are now moot.
     prisma.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } }),
   ]);

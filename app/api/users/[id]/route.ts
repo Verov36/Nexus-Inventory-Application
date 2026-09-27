@@ -11,6 +11,8 @@ const updateSchema = z.object({
   password: z.string().min(8).optional(),
   role: z.enum(ROLES).optional(),
   canReceiveParts: z.boolean().optional(),
+  // false = deactivate (can't sign in, existing sessions end), true = reactivate.
+  active: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -31,13 +33,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { name, email, password, role, canReceiveParts } = parsed.data;
+  const { name, email, password, role, canReceiveParts, active } = parsed.data;
   if (
     name === undefined &&
     email === undefined &&
     password === undefined &&
     role === undefined &&
-    canReceiveParts === undefined
+    canReceiveParts === undefined &&
+    active === undefined
   ) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
@@ -65,6 +68,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     passwordHash?: string;
     role?: (typeof ROLES)[number];
     canReceiveParts?: boolean;
+    disabledAt?: Date | null;
+    sessionVersion?: { increment: number };
   } = {};
 
   if (name !== undefined) data.name = name;
@@ -79,6 +84,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   if (password !== undefined) {
     data.passwordHash = await bcrypt.hash(password, 10);
+    // Whoever held the old password is signed out everywhere.
+    data.sessionVersion = { increment: 1 };
   }
 
   if (role !== undefined) {
@@ -91,7 +98,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     if (target.role === "SUPER_ADMIN" && role !== "SUPER_ADMIN") {
       const remainingSuperAdmins = await prisma.user.count({
-        where: { role: "SUPER_ADMIN", id: { not: target.id } },
+        where: { role: "SUPER_ADMIN", disabledAt: null, id: { not: target.id } },
       });
       if (remainingSuperAdmins === 0) {
         return NextResponse.json(
@@ -112,7 +119,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     if (canReceiveParts === true && !target.canReceiveParts) {
       const currentCount = await prisma.user.count({
-        where: { canReceiveParts: true, role: { not: "SUPER_ADMIN" } },
+        where: { canReceiveParts: true, disabledAt: null, role: { not: "SUPER_ADMIN" } },
       });
       if (currentCount >= MAX_DESIGNATED_RECEIVERS) {
         return NextResponse.json(
@@ -126,17 +133,47 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     data.canReceiveParts = canReceiveParts;
   }
 
+  if (active !== undefined && active !== !target.disabledAt) {
+    if (session?.user?.id === target.id) {
+      return NextResponse.json({ error: "You can't deactivate your own account" }, { status: 400 });
+    }
+    if (targetIsAdminTier && actingRole !== "SUPER_ADMIN") {
+      return NextResponse.json(
+        { error: "Only a super admin can deactivate or reactivate an Admin or Super Admin" },
+        { status: 403 }
+      );
+    }
+    if (!active && target.role === "SUPER_ADMIN") {
+      const remainingSuperAdmins = await prisma.user.count({
+        where: { role: "SUPER_ADMIN", disabledAt: null, id: { not: target.id } },
+      });
+      if (remainingSuperAdmins === 0) {
+        return NextResponse.json({ error: "Can't deactivate the last active super admin" }, { status: 409 });
+      }
+    }
+    data.disabledAt = active ? null : new Date();
+    if (!active) {
+      data.sessionVersion = { increment: 1 };
+      // A deactivated person keeps no designated-receiver slot.
+      data.canReceiveParts = false;
+    }
+  }
+
   const user = await prisma.$transaction(async (tx) => {
     // A user who stops being a Truck Tech shouldn't stay attached to a truck —
     // otherwise the truck looks "assigned" to someone who can no longer check
     // parts out to it, and no tech can be put on it without a manual unassign.
-    if (role !== undefined && role !== "TRUCK_TECH" && target.role === "TRUCK_TECH") {
+    // Same for someone being deactivated: free their truck for the next tech.
+    if ((role !== undefined && role !== "TRUCK_TECH" && target.role === "TRUCK_TECH") || active === false) {
       await tx.truck.updateMany({ where: { techId: target.id }, data: { techId: null } });
+    }
+    if (active === false) {
+      await tx.passwordResetToken.updateMany({ where: { userId: target.id, usedAt: null }, data: { usedAt: new Date() } });
     }
     return tx.user.update({
       where: { id: params.id },
       data,
-      select: { id: true, name: true, email: true, role: true, canReceiveParts: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, canReceiveParts: true, disabledAt: true, createdAt: true },
     });
   });
   return NextResponse.json({ user });
@@ -164,7 +201,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   }
   if (target.role === "SUPER_ADMIN") {
     const remainingSuperAdmins = await prisma.user.count({
-      where: { role: "SUPER_ADMIN", id: { not: target.id } },
+      where: { role: "SUPER_ADMIN", disabledAt: null, id: { not: target.id } },
     });
     if (remainingSuperAdmins === 0) {
       return NextResponse.json({ error: "Can't delete the last remaining super admin" }, { status: 409 });
@@ -177,7 +214,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
     return NextResponse.json(
       {
         error:
-          "This user has inventory history tied to their account (receipts, checkouts, or justifications) and can't be deleted. Consider changing their role instead to revoke access.",
+          "This user has inventory history tied to their account (receipts, checkouts, or justifications) and can't be deleted. Deactivate them instead — that blocks sign-in and ends their sessions while keeping the history.",
       },
       { status: 409 }
     );
