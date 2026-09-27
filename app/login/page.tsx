@@ -55,6 +55,10 @@ function LoginForm() {
     setError(null);
     try {
       const res = await signIn("credentials", { email: email.trim(), password, redirect: false });
+      if (res?.code === "rate_limited") {
+        setError("Too many sign-in attempts. Wait 15 minutes and try again, or reset your password.");
+        return;
+      }
       if (res?.error) {
         setError("Email or password didn't match.");
         return;

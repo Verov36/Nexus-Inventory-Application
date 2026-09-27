@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { canRunReports } from "@/lib/roles";
 import { generateUsageSummary, getTransactionRows } from "@/lib/reports";
 import { money, toNumber } from "@/lib/money";
+import { csvCell } from "@/lib/csv";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -76,7 +77,7 @@ function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
       r.partUsage?.job?.jobNumber ?? "",
       r.justification ? r.justification.status : "",
     ]
-      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+      .map(csvCell)
       .join(",");
   });
   return [header.join(","), ...lines].join("\n");

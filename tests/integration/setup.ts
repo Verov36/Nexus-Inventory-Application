@@ -23,7 +23,7 @@ export async function resetDatabase() {
     TRUNCATE TABLE
       "TruckCountLine", "TruckCount", "PasswordResetToken", "OverageJustification", "PartUsage",
       "InventoryTransaction", "TruckStockLimit", "StockLevel", "Job", "Truck", "Part", "Warehouse",
-      "ReportSnapshot", "ReportSchedule", "User"
+      "ReportSnapshot", "ReportSchedule", "User", "RateLimit"
     RESTART IDENTITY CASCADE
   `);
 }

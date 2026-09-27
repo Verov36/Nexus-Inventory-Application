@@ -8,7 +8,7 @@ datasource db {
 }
 
 enum Role {
-  SUPER_ADMIN       // Chris — full system control, only one who can mass-import
+  SUPER_ADMIN       // owner — full system control, only one who can mass-import
   ADMIN             // manages users and permissions
   MANAGER           // sets truck caps, reviews overage justifications, runs reports
   WAREHOUSE_MANAGER // oversees warehouse operations and staff
@@ -281,4 +281,15 @@ model ReportSnapshot {
   rangeTo     DateTime
   summaryJson String   @db.Text
   generatedAt DateTime @default(now())
+}
+
+// Fixed-window counters for rate limiting sign-in, password reset and setup.
+// Kept in Postgres so limits hold across every app instance without adding
+// Redis. Stale rows are swept opportunistically by lib/rate-limit.ts.
+model RateLimit {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+
+  @@index([windowStart])
 }

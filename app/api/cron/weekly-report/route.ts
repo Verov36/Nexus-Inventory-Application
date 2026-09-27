@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateUsageSummary } from "@/lib/reports";
@@ -24,8 +25,10 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${secret}`) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const given = createHash("sha256").update(authHeader).digest();
+  const expected = createHash("sha256").update(`Bearer ${secret}`).digest();
+  if (!timingSafeEqual(given, expected)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   }
 

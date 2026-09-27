@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { canEditParts } from "@/lib/roles";
 import { getReorderList } from "@/lib/reorder";
 import { money } from "@/lib/money";
+import { csvCell } from "@/lib/csv";
 
 // GET /api/reorder[?format=csv] — what to order, grouped by supplier on the client.
 export async function GET(req: NextRequest) {
@@ -99,5 +100,5 @@ export async function POST(req: NextRequest) {
 }
 
 function row(cols: (string | number)[]) {
-  return cols.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+  return cols.map(csvCell).join(",");
 }

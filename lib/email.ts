@@ -33,14 +33,23 @@ export async function sendEmail(opts: { to: string; subject: string; text: strin
 }
 
 /** Public base URL of this deployment, for links inside emails. */
-export function appBaseUrl(req?: { headers: Headers; nextUrl?: { origin?: string } }) {
-  const configured = process.env.APP_URL ?? process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+//
+// Only ever taken from configuration — never from request headers, which a
+// caller can set to their own domain and so receive someone else's reset link.
+export function appBaseUrl() {
+  const configured = process.env.APP_URL || process.env.AUTH_URL || process.env.NEXTAUTH_URL;
   if (configured) return configured.replace(/\/$/, "");
   if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-  if (req) {
-    const proto = req.headers.get("x-forwarded-proto") ?? "https";
-    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-    if (host) return `${proto}://${host}`;
+  if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
+  throw new Error("Set APP_URL to this deployment's public URL (e.g. https://inventory.example.com).");
+}
+
+/** Email features need both a mail provider and a known public URL. */
+export function canSendLinks() {
+  try {
+    appBaseUrl();
+    return isEmailConfigured();
+  } catch {
+    return false;
   }
-  return "http://localhost:3000";
 }

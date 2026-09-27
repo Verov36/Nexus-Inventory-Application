@@ -3,11 +3,15 @@ import { z } from "zod";
 import { createHash } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const schema = z.object({ token: z.string().min(20), password: z.string().min(8).max(200) });
 
 // POST /api/auth/reset { token, password } — consumes a link from /api/auth/forgot.
 export async function POST(req: NextRequest) {
+  const limit = await rateLimit(`reset:ip:${clientIp(req.headers)}`, 20, 15 * 60);
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds);
+
   let body: unknown;
   try {
     body = await req.json();

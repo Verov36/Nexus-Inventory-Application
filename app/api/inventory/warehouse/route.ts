@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canViewWarehouseInventory } from "@/lib/roles";
 import { money, toNumber } from "@/lib/money";
+import { csvCell } from "@/lib/csv";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
         i.reorderThreshold,
         i.lowStock ? "Yes" : "No",
       ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .map(csvCell)
         .join(",")
     );
     const csv = [header.join(","), ...lines].join("\n");

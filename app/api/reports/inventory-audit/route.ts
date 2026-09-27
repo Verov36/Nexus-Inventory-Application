@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { canRunReports } from "@/lib/roles";
 import { findApplicableLimit } from "@/lib/limits";
 import { money, toNumber } from "@/lib/money";
+import { csvCell } from "@/lib/csv";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -140,5 +141,5 @@ export async function GET(req: NextRequest) {
 }
 
 function row(cols: (string | number)[]) {
-  return cols.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+  return cols.map(csvCell).join(",");
 }

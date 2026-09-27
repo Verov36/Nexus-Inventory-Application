@@ -88,9 +88,11 @@ npm run dev
 ```
 
 Open the app: with an empty database it sends you to `/setup`, where you
-create the first Super Admin account and the warehouse. No seed script or
-env var needed. (`npm run seed` still exists for a demo login —
-`chris@example.com` / `changeme123` — if you'd rather.)
+create the first Super Admin account and the warehouse. In production `/setup`
+also asks for the `SETUP_TOKEN` you set in the deployment's environment, so
+nobody else can claim a fresh deployment. (`npm run seed` creates a demo
+login with a random password it prints once; it refuses to run with
+`NODE_ENV=production`.)
 
 `NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID` is optional: the server falls back to
 `DEFAULT_WAREHOUSE_ID`, then to the first warehouse in the database.

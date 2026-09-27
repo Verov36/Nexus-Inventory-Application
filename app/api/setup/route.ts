@@ -1,15 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { createHash, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 // First-run setup. Only does anything while the database has zero users —
 // the moment the first super admin exists this endpoint is inert, so it
 // can't be used to add accounts later.
+//
+// In production it also requires SETUP_TOKEN from the deployment's
+// environment. Without that, whoever reached a fresh (or restored-empty)
+// deployment's URL first would become its super admin.
+
+function setupTokenRequired() {
+  return process.env.NODE_ENV === "production" || !!process.env.SETUP_TOKEN;
+}
+
+function setupTokenMatches(given: string | undefined) {
+  const expected = process.env.SETUP_TOKEN;
+  if (!expected) return false;
+  // Hash both sides so the comparison is constant-time regardless of length.
+  const a = createHash("sha256").update(given ?? "").digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 export async function GET() {
   const users = await prisma.user.count();
-  return NextResponse.json({ needsSetup: users === 0 });
+  return NextResponse.json({
+    needsSetup: users === 0,
+    setupTokenRequired: setupTokenRequired(),
+    setupTokenConfigured: !!process.env.SETUP_TOKEN,
+  });
 }
 
 const setupSchema = z.object({
@@ -17,9 +40,13 @@ const setupSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8).max(200),
   warehouseName: z.string().trim().min(1).max(120).default("Main warehouse"),
+  setupToken: z.string().max(500).optional(),
 });
 
 export async function POST(req: NextRequest) {
+  const limit = await rateLimit(`setup:ip:${clientIp(req.headers)}`, 10, 15 * 60);
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -31,12 +58,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  if (setupTokenRequired()) {
+    if (!process.env.SETUP_TOKEN) {
+      return NextResponse.json(
+        { error: "Set SETUP_TOKEN in this deployment's environment variables, redeploy, then enter it here." },
+        { status: 503 }
+      );
+    }
+    if (!setupTokenMatches(parsed.data.setupToken)) {
+      return NextResponse.json({ error: "Setup token didn't match SETUP_TOKEN." }, { status: 403 });
+    }
+  }
+
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Re-checked inside the transaction so two simultaneous setup posts
-      // can't both create a super admin.
+      // Serialize setup: at READ COMMITTED two concurrent transactions could
+      // both count zero users. The advisory lock makes the second one wait,
+      // then see the first one's user.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(8675309)`;
       const users = await tx.user.count();
       if (users > 0) throw new AlreadySetUp();
 

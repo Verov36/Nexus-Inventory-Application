@@ -1,8 +1,15 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { revalidateSession } from "@/lib/session";
+import { clientIp, rateLimitAll } from "@/lib/rate-limit";
+
+// Surfaced to the login form as `code`, so it can say "wait" rather than
+// "wrong password".
+class RateLimited extends CredentialsSignin {
+  code = "rate_limited";
+}
 
 // Idle timeout: a session unused for a full shift plus overtime ends. (The
 // cookie is re-issued while it's in use; lib/session.ts also caps the total
@@ -23,10 +30,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials) => {
+      authorize: async (credentials, request) => {
         const email = (credentials?.email as string | undefined)?.trim().toLowerCase();
         const password = credentials?.password as string | undefined;
         if (!email || !password) return null;
+
+        // Per account (stops guessing one person's password) and per source
+        // address (stops spraying one password across many accounts).
+        const limit = await rateLimitAll([
+          [`login:email:${email}`, 10, 15 * 60],
+          [`login:ip:${clientIp(request.headers)}`, 50, 15 * 60],
+        ]);
+        if (!limit.ok) throw new RateLimited();
 
         const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
         const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);

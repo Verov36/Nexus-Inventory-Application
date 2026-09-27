@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { appBaseUrl, isEmailConfigured, sendEmail } from "@/lib/email";
+import { appBaseUrl, canSendLinks, sendEmail } from "@/lib/email";
+import { clientIp, rateLimitAll, tooManyRequests } from "@/lib/rate-limit";
 
 const schema = z.object({ email: z.string().trim().toLowerCase().email() });
 const TOKEN_TTL_MINUTES = 30;
@@ -24,7 +25,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
-  if (!isEmailConfigured()) {
+  // Per address so nobody can flood someone's inbox; per source so the form
+  // can't be scripted across many addresses.
+  const limit = await rateLimitAll([
+    [`forgot:email:${parsed.data.email}`, 3, 15 * 60],
+    [`forgot:ip:${clientIp(req.headers)}`, 10, 15 * 60],
+  ]);
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds);
+
+  if (!canSendLinks()) {
     return NextResponse.json({ ok: true, emailConfigured: false });
   }
 
@@ -40,18 +49,19 @@ export async function POST(req: NextRequest) {
       }),
     ]);
 
-    const link = `${appBaseUrl(req)}/reset-password?token=${token}`;
-    try {
-      await sendEmail({
-        to: user.email,
+    const link = `${appBaseUrl()}/reset-password?token=${token}`;
+    // Sent after the response: waiting on the mail provider only for real
+    // accounts would let response time (or a send failure) reveal which
+    // emails exist.
+    const { email: to, name } = user;
+    after(() =>
+      sendEmail({
+        to,
         subject: "Reset your Nexus Inventory password",
-        text: `Hi ${user.name},\n\nSomeone asked to reset the password for this account. If that was you, open this link within ${TOKEN_TTL_MINUTES} minutes:\n\n${link}\n\nIf it wasn't you, ignore this email — nothing changes until the link is used.`,
-        html: `<p>Hi ${escapeHtml(user.name)},</p><p>Someone asked to reset the password for this account. If that was you, open this link within ${TOKEN_TTL_MINUTES} minutes:</p><p><a href="${link}">${link}</a></p><p>If it wasn't you, ignore this email — nothing changes until the link is used.</p>`,
-      });
-    } catch (err) {
-      console.error("Password reset email failed:", err);
-      return NextResponse.json({ error: "Couldn't send the email — tell your admin to check the email settings." }, { status: 502 });
-    }
+        text: `Hi ${name},\n\nSomeone asked to reset the password for this account. If that was you, open this link within ${TOKEN_TTL_MINUTES} minutes:\n\n${link}\n\nIf it wasn't you, ignore this email — nothing changes until the link is used.`,
+        html: `<p>Hi ${escapeHtml(name)},</p><p>Someone asked to reset the password for this account. If that was you, open this link within ${TOKEN_TTL_MINUTES} minutes:</p><p><a href="${link}">${link}</a></p><p>If it wasn't you, ignore this email — nothing changes until the link is used.</p>`,
+      }).catch((err) => console.error("Password reset email failed:", err))
+    );
   }
 
   return NextResponse.json({ ok: true, emailConfigured: true });

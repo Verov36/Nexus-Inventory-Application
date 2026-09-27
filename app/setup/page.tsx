@@ -7,7 +7,16 @@ import { signIn } from "next-auth/react";
 export default function SetupPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", warehouseName: "Main warehouse" });
+  const [tokenRequired, setTokenRequired] = useState(false);
+  const [tokenConfigured, setTokenConfigured] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirm: "",
+    warehouseName: "Main warehouse",
+    setupToken: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -15,8 +24,13 @@ export default function SetupPage() {
     fetch("/api/setup")
       .then((r) => r.json())
       .then((d) => {
-        if (!d.needsSetup) router.replace("/login");
-        else setChecking(false);
+        if (!d.needsSetup) {
+          router.replace("/login");
+          return;
+        }
+        setTokenRequired(!!d.setupTokenRequired);
+        setTokenConfigured(!!d.setupTokenConfigured);
+        setChecking(false);
       })
       .catch(() => {
         setError("Couldn't reach the server. Check DATABASE_URL and that migrations have run.");
@@ -41,6 +55,7 @@ export default function SetupPage() {
           email: form.email,
           password: form.password,
           warehouseName: form.warehouseName,
+          setupToken: form.setupToken || undefined,
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -80,7 +95,29 @@ export default function SetupPage() {
           Create the first account. It becomes the Super Admin, who adds everyone else from Users &amp; permissions.
         </p>
       </div>
+      {tokenRequired && !tokenConfigured && (
+        <p role="alert" className="rounded-lg border-2 border-nexus-danger/40 bg-white p-3 text-sm text-nexus-danger">
+          Before anyone can set this up, add a <code>SETUP_TOKEN</code> environment variable to this deployment (any
+          long random string) and redeploy. You&apos;ll enter it below — it proves you control the server.
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        {tokenRequired && (
+          <>
+            <label htmlFor="setup-token" className="text-sm font-medium text-nexus-navy">
+              Setup token (the SETUP_TOKEN value from your hosting settings)
+            </label>
+            <input
+              id="setup-token"
+              type="password"
+              value={form.setupToken}
+              onChange={(e) => setForm({ ...form, setupToken: e.target.value })}
+              className={input}
+              required
+              autoComplete="off"
+            />
+          </>
+        )}
         <input
           placeholder="Your name"
           value={form.name}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
@@ -15,6 +16,9 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
+  // A stolen session shouldn't be able to brute-force the current password.
+  const limit = await rateLimit(`password-change:${session.user.id}`, 5, 15 * 60);
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds);
 
   let body: unknown;
   try {
