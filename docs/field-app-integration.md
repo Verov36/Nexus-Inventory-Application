@@ -69,6 +69,19 @@ All under `/api/v1`, JSON, org taken from the API key.
   → `201 { usageId, lines: [{ lineId, partId, quantity, unitCost, unitPrice, remainingOnTruck }] }`
   All-or-nothing. It returns `409 { error, partId, available, requested }` if
   the truck is short. It is built on the existing `consumeFromTruck`.
+
+  **Who may record parts, checked on both sides:**
+  - **Field App (before calling):** the acting user must pass
+    `canWorkJob` (`src/lib/scope.ts`). A tech works only their assigned jobs;
+    dispatchers and managers use their existing scope. The legacy
+    `/api/jobs/[id]/parts` endpoint lacks this check today and must get it
+    when it's switched over.
+  - **Inventory (on receipt):** `usedBy.externalUserId` must be assigned to
+    `truckId` (via `/trucks/{truckId}/assignment`). Otherwise the request
+    needs `"onBehalf": true`, which is allowed only when the Field App marks
+    the actor as a manager or dispatcher. The Field App is trusted for job
+    scope, but a bug or a leaked key still can't drain a random truck.
+    Violations return `403 { code: "not_assigned_to_truck" }`.
 - `POST /jobs/{externalJobId}/parts-used/{lineId}/reverse` (Idempotency-Key)
   `{ quantity, reason }` puts parts back on the truck they came from. It is a
   reversing entry, never a delete, so the ledger stays auditable.
