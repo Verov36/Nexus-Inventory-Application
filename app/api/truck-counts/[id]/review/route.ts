@@ -13,7 +13,8 @@ const reviewSchema = z.object({ decision: z.enum(["APPLY", "DISCARD"]) });
 // off, overages go on) so the live count matches what was physically
 // found. Managers only. DISCARD is also allowed for whoever started an
 // OPEN count (a tech abandoning their own count).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });

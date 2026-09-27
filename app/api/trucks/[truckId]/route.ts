@@ -9,7 +9,8 @@ const updateSchema = z.object({
   active: z.boolean().optional(),
 });
 
-export async function PATCH(req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -34,7 +35,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { truckId: s
   return NextResponse.json({ truck });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });

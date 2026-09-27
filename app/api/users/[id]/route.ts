@@ -13,7 +13,8 @@ const updateSchema = z.object({
   canReceiveParts: z.boolean().optional(),
 });
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   const actingRole = (session?.user as { role?: string })?.role;
   if (!canManageUsers(actingRole)) {
@@ -141,7 +142,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ user });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   const actingRole = (session?.user as { role?: string })?.role;
   if (!canManageUsers(actingRole)) {

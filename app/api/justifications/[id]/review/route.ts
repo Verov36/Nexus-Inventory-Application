@@ -6,7 +6,8 @@ import { canReviewJustifications } from "@/lib/roles";
 
 const reviewSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]) });
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });

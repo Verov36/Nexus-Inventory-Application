@@ -26,7 +26,8 @@ function present(count: LoadedCount, role: string | undefined) {
 }
 
 // GET /api/truck-counts/:id — the count with its lines and variances.
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -48,7 +49,8 @@ const patchSchema = z.object({
 
 // PATCH /api/truck-counts/:id — save counted quantities, add a part that
 // was found on the truck but wasn't in the snapshot, or set notes. OPEN only.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });

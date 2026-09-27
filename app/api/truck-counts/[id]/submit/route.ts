@@ -5,7 +5,8 @@ import { canWorkTruck, loadCount, summarizeCount } from "@/lib/truck-counts";
 
 // POST /api/truck-counts/:id/submit — the count is finished and ready for a
 // manager. Every line must have a counted quantity (0 is fine, blank isn't).
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });

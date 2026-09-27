@@ -135,7 +135,7 @@ describe.skipIf(!hasDatabase)("truck counts (real database)", () => {
     expect(again.status).toBe(409);
 
     const detail = await import("@/app/api/truck-counts/[id]/route");
-    const blind = await detail.GET(await jsonRequest(`/api/truck-counts/${countId}`, "GET"), { params: { id: countId } });
+    const blind = await detail.GET(await jsonRequest(`/api/truck-counts/${countId}`, "GET"), { params: Promise.resolve({ id: countId }) });
     const blindBody = await blind.json();
     expect(blindBody.count.lines).toHaveLength(2);
     expect(blindBody.count.lines[0].expectedQty).toBeNull();
@@ -149,29 +149,29 @@ describe.skipIf(!hasDatabase)("truck counts (real database)", () => {
         ],
         notes: "box was open",
       }),
-      { params: { id: countId } }
+      { params: Promise.resolve({ id: countId }) }
     );
     expect(patched.status).toBe(200);
 
     const submit = await import("@/app/api/truck-counts/[id]/submit/route");
-    const submitted = await submit.POST(await jsonRequest(`/api/truck-counts/${countId}/submit`, "POST"), { params: { id: countId } });
+    const submitted = await submit.POST(await jsonRequest(`/api/truck-counts/${countId}/submit`, "POST"), { params: Promise.resolve({ id: countId }) });
     expect(submitted.status).toBe(200);
 
     // Tech can't apply.
     const review = await import("@/app/api/truck-counts/[id]/review/route");
-    const asTech = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: { id: countId } });
+    const asTech = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: Promise.resolve({ id: countId }) });
     expect(asTech.status).toBe(403);
 
     vi.resetModules();
     mockAuthAs({ id: s.manager.id, role: "MANAGER" });
     const detailM = await import("@/app/api/truck-counts/[id]/route");
-    const seen = await (await detailM.GET(await jsonRequest(`/api/truck-counts/${countId}`, "GET"), { params: { id: countId } })).json();
+    const seen = await (await detailM.GET(await jsonRequest(`/api/truck-counts/${countId}`, "GET"), { params: Promise.resolve({ id: countId }) })).json();
     expect(seen.count.unitsShort).toBe(2);
     expect(seen.count.unitsOver).toBe(0);
     expect(seen.count.varianceValue).toBe(-25);
 
     const reviewM = await import("@/app/api/truck-counts/[id]/review/route");
-    const applied = await reviewM.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: { id: countId } });
+    const applied = await reviewM.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: Promise.resolve({ id: countId }) });
     expect(applied.status).toBe(200);
     expect((await applied.json()).adjustments).toBe(1);
 
@@ -195,7 +195,7 @@ describe.skipIf(!hasDatabase)("truck counts (real database)", () => {
     const countId = (await (await list.POST(await jsonRequest("/api/truck-counts", "POST", { truckId: s.truck.id }))).json()).count.id as string;
 
     const submit = await import("@/app/api/truck-counts/[id]/submit/route");
-    const blank = await submit.POST(await jsonRequest(`/api/truck-counts/${countId}/submit`, "POST"), { params: { id: countId } });
+    const blank = await submit.POST(await jsonRequest(`/api/truck-counts/${countId}/submit`, "POST"), { params: Promise.resolve({ id: countId }) });
     expect(blank.status).toBe(400);
 
     const detail = await import("@/app/api/truck-counts/[id]/route");
@@ -206,10 +206,10 @@ describe.skipIf(!hasDatabase)("truck counts (real database)", () => {
           { partId: s.filter.id, countedQty: 2 },
         ],
       }),
-      { params: { id: countId } }
+      { params: Promise.resolve({ id: countId }) }
     );
     const review = await import("@/app/api/truck-counts/[id]/review/route");
-    const applied = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: { id: countId } });
+    const applied = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: Promise.resolve({ id: countId }) });
     expect(applied.status).toBe(200);
     expect(await truckQty(s.capacitor.id, s.truck.id)).toBe(6);
     const adj = await s.prisma.inventoryTransaction.findFirst({ where: { type: "ADJUSTMENT" } });

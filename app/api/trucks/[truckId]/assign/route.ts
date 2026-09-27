@@ -6,7 +6,8 @@ import { canManageTrucksAndLimits } from "@/lib/roles";
 
 const assignSchema = z.object({ techId: z.string().min(1).nullable() });
 
-export async function POST(req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Only a manager or admin can assign techs to trucks" }, { status: 403 });

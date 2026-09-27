@@ -14,7 +14,8 @@ const limitSchema = z
     message: "Set exactly one of partId or category, not both",
   });
 
-export async function GET(_req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -26,7 +27,8 @@ export async function GET(_req: NextRequest, { params }: { params: { truckId: st
   return NextResponse.json({ limits });
 }
 
-export async function POST(req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -92,7 +94,8 @@ const deleteSchema = z.object({ limitId: z.string().min(1) });
 // DELETE /api/trucks/:truckId/limits  { limitId } — remove a cap entirely.
 // Previously the only way to "remove" a cap was to set it to 0, which
 // actually blocks every restock of that part rather than lifting the limit.
-export async function DELETE(req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });

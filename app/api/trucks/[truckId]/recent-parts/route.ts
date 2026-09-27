@@ -10,7 +10,8 @@ const MAX_PARTS = 12;
 // The parts most recently checked out to this truck, with what's on the
 // truck now and the cap that applies — the "tap to add" strip on the
 // checkout screen, so restocking the usual items doesn't need a scan.
-export async function GET(_req: NextRequest, { params }: { params: { truckId: string } }) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+  const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
