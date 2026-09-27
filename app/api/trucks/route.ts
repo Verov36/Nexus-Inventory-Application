@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits, canViewFleet } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -104,9 +105,13 @@ export async function GET() {
   return NextResponse.json({ trucks: trucksWithBreakdown });
 }
 
-const createTruckSchema = z.object({ label: z.string().trim().min(1) });
+const createTruckSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  // Which branch the truck runs out of; defaults to the organization's first.
+  branchId: z.string().min(1).optional(),
+});
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Only a manager or admin can add trucks" }, { status: 403 });
@@ -130,6 +135,13 @@ export async function POST(req: NextRequest) {
       { status: 409 }
     );
   }
-  const truck = await prisma.truck.create({ data: { label: parsed.data.label } });
+  const branch = parsed.data.branchId
+    ? await prisma.branch.findFirst({ where: { id: parsed.data.branchId, active: true }, select: { id: true } })
+    : await prisma.branch.findFirst({ where: { active: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (!branch) return NextResponse.json({ error: "Branch not found" }, { status: 404 });
+  const truck = await prisma.truck.create({ data: { label: parsed.data.label, branchId: branch.id } });
   return NextResponse.json({ truck }, { status: 201 });
 }
+
+export const GET = withOrg(handleGET);
+export const POST = withOrg(handlePOST);

@@ -1,6 +1,7 @@
-import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { prisma, type Tx } from "@/lib/prisma";
 import { randomUUID } from "crypto";
+import { currentOrgId } from "@/lib/tenant";
 
 /**
  * Thrown from inside a stock-adjusting transaction when a removal would take
@@ -59,7 +60,7 @@ export async function resolveWarehouseId(requested?: string | null) {
  * nothing else can move that stock between the read and the write.
  */
 export async function lockStockQty(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   partId: string,
   at: { truckId: string } | { warehouseId: string }
 ): Promise<number> {
@@ -77,7 +78,7 @@ export async function lockStockQty(
 }
 
 async function applyDelta(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   where: { partId: string; warehouseId?: string; truckId?: string },
   create: Prisma.StockLevelUncheckedCreateInput,
   delta: number
@@ -111,7 +112,7 @@ async function applyDelta(
 
 /** Adjusts (or creates) a warehouse stock row by a signed delta. Must run inside a transaction. */
 export async function adjustWarehouseStock(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   partId: string,
   warehouseId: string,
   delta: number
@@ -126,7 +127,7 @@ export async function adjustWarehouseStock(
 
 /** Adjusts (or creates) a truck stock row by a signed delta. Must run inside a transaction. */
 export async function adjustTruckStock(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   partId: string,
   truckId: string,
   delta: number
@@ -150,12 +151,15 @@ export async function getApplicableLimit(truckId: string, partId: string, catego
  * against the same brand-new job number at the same moment would otherwise
  * both try to insert it, and the second would fail with a unique violation.
  */
-export async function findOrCreateJob(tx: Prisma.TransactionClient, jobNumber: string) {
+export async function findOrCreateJob(tx: Tx, jobNumber: string, externalId?: string) {
+  // Raw SQL isn't scoped by the Prisma extension, so the organization is
+  // written explicitly here.
+  const organizationId = currentOrgId();
   await tx.$executeRaw`
-    INSERT INTO "Job" ("id", "jobNumber", "status", "createdAt")
-    VALUES (${createId()}, ${jobNumber}, 'open', timezone('utc', now()))
-    ON CONFLICT ("jobNumber") DO NOTHING`;
-  return tx.job.findUniqueOrThrow({ where: { jobNumber } });
+    INSERT INTO "Job" ("id", "organizationId", "jobNumber", "externalId", "status", "createdAt")
+    VALUES (${createId()}, ${organizationId}, ${jobNumber}, ${externalId ?? null}, 'open', timezone('utc', now()))
+    ON CONFLICT ("organizationId", "jobNumber") DO NOTHING`;
+  return tx.job.findFirstOrThrow({ where: { jobNumber } });
 }
 
 function createId() {

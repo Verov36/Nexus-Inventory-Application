@@ -54,8 +54,8 @@ describe.skipIf(!hasDatabase)("perimeter (real database)", () => {
       ),
     ]);
     expect([a.status, b.status].sort()).toEqual([201, 409]);
-    const { getPrisma } = await import("./setup");
-    expect(await (await getPrisma()).user.count({ where: { role: "SUPER_ADMIN" } })).toBe(1);
+    const { getRawPrisma } = await import("./setup");
+    expect(await (await getRawPrisma()).user.count({ where: { role: "SUPER_ADMIN" } })).toBe(1);
   });
 
   it("forgot-password is rate limited per address", async () => {

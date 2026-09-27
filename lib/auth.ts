@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { revalidateSession } from "@/lib/session";
 import { clientIp, rateLimitAll } from "@/lib/rate-limit";
+import { runUnscoped } from "@/lib/tenant";
 
 // Surfaced to the login form as `code`, so it can say "wait" rather than
 // "wrong password".
@@ -43,7 +44,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         ]);
         if (!limit.ok) throw new RateLimited();
 
-        const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
+        // Sign-in is by email across every organization (emails are unique
+        // system-wide); the session then carries the user's organization.
+        const user = await runUnscoped("sign-in by email", () =>
+          prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })
+        );
         const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
         if (!user || !valid || user.disabledAt) return null;
 
@@ -54,6 +59,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: user.role,
           canReceiveParts: user.canReceiveParts,
           sessionVersion: user.sessionVersion,
+          organizationId: user.organizationId,
         };
       },
     }),
@@ -64,6 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = (user as { role: string }).role;
         token.canReceiveParts = (user as { canReceiveParts: boolean }).canReceiveParts;
         token.sv = (user as { sessionVersion: number }).sessionVersion;
+        token.org = (user as { organizationId: string }).organizationId;
         token.authAt = Math.floor(Date.now() / 1000);
         token.name = user.name;
         return token;
@@ -83,6 +90,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.name = (token.name as string | undefined) ?? session.user.name;
         (session.user as { role?: string }).role = token.role as string;
         (session.user as { canReceiveParts?: boolean }).canReceiveParts = token.canReceiveParts as boolean;
+        (session.user as { organizationId?: string }).organizationId = token.org as string;
       }
       return session;
     },

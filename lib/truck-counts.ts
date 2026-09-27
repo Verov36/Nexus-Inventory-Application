@@ -1,5 +1,4 @@
-import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, type Tx } from "@/lib/prisma";
 import { adjustTruckStock, lockStockQty } from "@/lib/inventory";
 import { canCheckoutToTruck, canManageTrucksAndLimits } from "@/lib/roles";
 import { money, toNumber } from "@/lib/money";
@@ -91,7 +90,7 @@ export class CountStateConflict extends Error {}
  * happened while the count was open is neither double-counted nor lost, and
  * the posted adjustment is the real shrink or overage.
  */
-export async function applyCount(tx: Prisma.TransactionClient, countId: string, reviewerId: string) {
+export async function applyCount(tx: Tx, countId: string, reviewerId: string) {
   const claimed = await tx.truckCount.updateMany({
     where: { id: countId, status: "SUBMITTED" },
     data: { status: "APPLIED", reviewedById: reviewerId, reviewedAt: new Date() },

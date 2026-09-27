@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createHash } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { runUnscoped } from "@/lib/tenant";
 import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const schema = z.object({ token: z.string().min(20), password: z.string().min(8).max(200) });
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  const consumed = await prisma.$transaction(async (tx) => {
+  // Signed-out: the token identifies the user, whatever their organization.
+  const consumed = await runUnscoped("password reset by token", () => prisma.$transaction(async (tx) => {
     // Conditional on usedAt still being null, so two concurrent submissions
     // of the same link can't both set a password.
     const claim = await tx.passwordResetToken.updateMany({
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
       data: { passwordHash, sessionVersion: { increment: 1 } },
     });
     return true;
-  });
+  }));
   if (!consumed) {
     return NextResponse.json(
       { error: "This reset link has already been used. Request a new one from the sign-in page." },

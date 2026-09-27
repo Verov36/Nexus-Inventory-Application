@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { withOrg } from "@/lib/with-org";
 
 // GET /api/parts/search?q=filter -> up to 10 parts matching name or SKU
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -21,3 +22,5 @@ export async function GET(req: NextRequest) {
   });
   return NextResponse.json({ parts });
 }
+
+export const GET = withOrg(handleGET);

@@ -3,13 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
 import { z } from "zod";
+import { withOrg } from "@/lib/with-org";
 
 const updateSchema = z.object({
   label: z.string().trim().min(1).optional(),
   active: z.boolean().optional(),
 });
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
@@ -35,7 +36,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ truckId: 
   return NextResponse.json({ truck });
 }
 
-export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handleDELETE(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
@@ -93,3 +94,6 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ truckId
     });
   }
 }
+
+export const PATCH = withOrg(handlePATCH);
+export const DELETE = withOrg(handleDELETE);

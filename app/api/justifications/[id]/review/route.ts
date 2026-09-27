@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canReviewJustifications } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
 const reviewSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]) });
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePOST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -68,3 +69,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   return NextResponse.json({ justification });
 }
+
+export const POST = withOrg(handlePOST);

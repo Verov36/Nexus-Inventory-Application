@@ -12,18 +12,30 @@ export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 export const hasDatabase = !!TEST_DATABASE_URL;
 if (hasDatabase) process.env.DATABASE_URL = TEST_DATABASE_URL;
 
-export async function getPrisma() {
-  const { prisma } = await import("@/lib/prisma");
-  return prisma;
+// Rows the tests create directly belong to this organization; the signed-in
+// test users (mockAuthAs) belong to it too.
+export const TEST_ORG = "org_test";
+export const TEST_BRANCH = "branch_test";
+
+/** A client scoped to the test organization. */
+export async function getPrisma(organizationId = TEST_ORG) {
+  const { prismaForOrg } = await import("@/lib/prisma");
+  return prismaForOrg(organizationId);
+}
+
+/** Unscoped: for assertions across organizations. */
+export async function getRawPrisma() {
+  const { rawPrisma } = await import("@/lib/prisma");
+  return rawPrisma;
 }
 
 export async function resetDatabase() {
-  const prisma = await getPrisma();
+  const prisma = await getRawPrisma();
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       "TruckCountLine", "TruckCount", "PasswordResetToken", "OverageJustification", "PartUsage",
       "InventoryTransaction", "TruckStockLimit", "StockLevel", "Job", "Truck", "Part", "Warehouse",
-      "ReportSnapshot", "ReportSchedule", "User", "RateLimit", "IdempotencyRecord"
+      "ReportSnapshot", "ReportSchedule", "User", "RateLimit", "IdempotencyRecord", "Branch", "Organization"
     RESTART IDENTITY CASCADE
   `);
 }
@@ -32,9 +44,12 @@ export type Seeded = Awaited<ReturnType<typeof seedBasics>>;
 
 /** A warehouse, a manager, a tech on a truck, and two parts with stock. */
 export async function seedBasics() {
+  const raw = await getRawPrisma();
+  await raw.organization.create({ data: { id: TEST_ORG, name: "Test Co" } });
   const prisma = await getPrisma();
+  await prisma.branch.create({ data: { id: TEST_BRANCH, name: "Test branch" } });
   const passwordHash = await bcrypt.hash("password123", 4);
-  const warehouse = await prisma.warehouse.create({ data: { id: "wh-test", name: "Test warehouse" } });
+  const warehouse = await prisma.warehouse.create({ data: { id: "wh-test", name: "Test warehouse", branchId: TEST_BRANCH } });
   const manager = await prisma.user.create({
     data: { name: "Mia Manager", email: "manager@test.local", passwordHash, role: "MANAGER" },
   });
@@ -44,8 +59,8 @@ export async function seedBasics() {
   const otherTech = await prisma.user.create({
     data: { name: "Olive Other", email: "other@test.local", passwordHash, role: "TRUCK_TECH" },
   });
-  const truck = await prisma.truck.create({ data: { label: "Truck 1", techId: tech.id } });
-  const otherTruck = await prisma.truck.create({ data: { label: "Truck 2", techId: otherTech.id } });
+  const truck = await prisma.truck.create({ data: { label: "Truck 1", techId: tech.id, branchId: TEST_BRANCH } });
+  const otherTruck = await prisma.truck.create({ data: { label: "Truck 2", techId: otherTech.id, branchId: TEST_BRANCH } });
   const capacitor = await prisma.part.create({
     data: { sku: "CAP-45", name: "Capacitor 45/5", barcodeValue: "CAP45", category: "Electrical", unitCost: "12.50" },
   });
@@ -77,9 +92,20 @@ export async function truckQty(partId: string, truckId: string) {
  * Route handlers call auth() from lib/auth; swap it for a stub so tests can
  * act as any user without a browser session. Call before importing a route.
  */
-export function mockAuthAs(user: { id: string; role: string; name?: string } | null) {
+export function mockAuthAs(user: { id: string; role: string; name?: string; organizationId?: string } | null) {
   vi.doMock("@/lib/auth", () => ({
-    auth: vi.fn(async () => (user ? { user: { id: user.id, role: user.role, name: user.name ?? "Test" } } : null)),
+    auth: vi.fn(async () =>
+      user
+        ? {
+            user: {
+              id: user.id,
+              role: user.role,
+              name: user.name ?? "Test",
+              organizationId: user.organizationId ?? TEST_ORG,
+            },
+          }
+        : null
+    ),
   }));
 }
 

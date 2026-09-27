@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { hasDatabase, resetDatabase, seedBasics, truckQty, warehouseQty, type Seeded } from "./setup";
+import { TEST_ORG, hasDatabase, resetDatabase, seedBasics, truckQty, warehouseQty, type Seeded } from "./setup";
 
 describe.skipIf(!hasDatabase)("performCheckout (real database)", () => {
   let s: Seeded;
@@ -11,7 +11,8 @@ describe.skipIf(!hasDatabase)("performCheckout (real database)", () => {
 
   async function checkout(overrides: Record<string, unknown> = {}) {
     const { performCheckout } = await import("@/lib/checkout");
-    return performCheckout({
+    const { runAsOrg } = await import("@/lib/tenant");
+    return runAsOrg(TEST_ORG, () => performCheckout({
       userId: s.tech.id,
       role: "TRUCK_TECH",
       truckId: s.truck.id,
@@ -20,7 +21,7 @@ describe.skipIf(!hasDatabase)("performCheckout (real database)", () => {
       jobNumber: "WO-100",
       items: [{ partId: s.capacitor.id, quantity: 2 }],
       ...overrides,
-    });
+    }));
   }
 
   it("moves stock from the warehouse to the truck and records the job", async () => {

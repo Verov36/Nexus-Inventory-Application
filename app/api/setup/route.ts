@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import { createHash, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
+import { runAsOrg, runUnscoped } from "@/lib/tenant";
+import { createOrganization } from "@/lib/organizations";
 
 // First-run setup. Only does anything while the database has zero users —
 // the moment the first super admin exists this endpoint is inert, so it
@@ -27,7 +29,7 @@ function setupTokenMatches(given: string | undefined) {
 }
 
 export async function GET() {
-  const users = await prisma.user.count();
+  const users = await runUnscoped("first-run check", () => prisma.user.count());
   return NextResponse.json({
     needsSetup: users === 0,
     setupTokenRequired: setupTokenRequired(),
@@ -39,6 +41,7 @@ const setupSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8).max(200),
+  organizationName: z.string().trim().min(1).max(120).default("My company"),
   warehouseName: z.string().trim().min(1).max(120).default("Main warehouse"),
   setupToken: z.string().max(500).optional(),
 });
@@ -73,28 +76,42 @@ export async function POST(req: NextRequest) {
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      // Serialize setup: at READ COMMITTED two concurrent transactions could
-      // both count zero users. The advisory lock makes the second one wait,
-      // then see the first one's user.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(8675309)`;
-      const users = await tx.user.count();
-      if (users > 0) throw new AlreadySetUp();
+    // First-run setup looks across the whole install (is there anyone at
+    // all?) and creates the first organization, so it runs unscoped.
+    const result = await runUnscoped("first-run setup", () =>
+      prisma.$transaction(async (tx) => {
+        // Serialize setup: at READ COMMITTED two concurrent transactions could
+        // both count zero users. The advisory lock makes the second one wait,
+        // then see the first one's user.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(8675309)`;
+        const users = await tx.user.count();
+        if (users > 0) throw new AlreadySetUp();
 
-      const user = await tx.user.create({
-        data: { name: parsed.data.name, email: parsed.data.email, passwordHash, role: "SUPER_ADMIN" },
-        select: { id: true, email: true },
-      });
-      const warehouse =
-        (await tx.warehouse.findFirst({ orderBy: { createdAt: "asc" } })) ??
-        (await tx.warehouse.create({ data: { id: "main-warehouse", name: parsed.data.warehouseName } }));
-      await tx.reportSchedule.upsert({
-        where: { id: "default-schedule" },
-        update: {},
-        create: { id: "default-schedule", frequencyDays: 7 },
-      });
-      return { user, warehouse };
-    });
+        // A database migrated from before organizations existed already has
+        // one (with the old data but no users yet); adopt it.
+        const existing = await tx.organization.findFirst({ orderBy: { createdAt: "asc" } });
+        const { organization, warehouse } = existing
+          ? {
+              organization: existing,
+              warehouse: await runAsOrg(existing.id, () =>
+                tx.warehouse.findFirstOrThrow({ orderBy: { createdAt: "asc" } })
+              ),
+            }
+          : await createOrganization(tx, {
+              name: parsed.data.organizationName,
+              branch: { name: "Main branch" },
+              warehouseName: parsed.data.warehouseName,
+            });
+
+        const user = await runAsOrg(organization.id, () =>
+          tx.user.create({
+            data: { name: parsed.data.name, email: parsed.data.email, passwordHash, role: "SUPER_ADMIN" },
+            select: { id: true, email: true },
+          })
+        );
+        return { user, warehouse };
+      })
+    );
 
     return NextResponse.json({ ok: true, warehouseId: result.warehouse.id, email: result.user.email }, { status: 201 });
   } catch (err) {

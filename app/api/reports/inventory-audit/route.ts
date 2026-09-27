@@ -5,8 +5,9 @@ import { canRunReports } from "@/lib/roles";
 import { findApplicableLimit } from "@/lib/limits";
 import { money, toNumber } from "@/lib/money";
 import { csvCell } from "@/lib/csv";
+import { withOrg } from "@/lib/with-org";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!canRunReports((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -143,3 +144,5 @@ export async function GET(req: NextRequest) {
 function row(cols: (string | number)[]) {
   return cols.map(csvCell).join(",");
 }
+
+export const GET = withOrg(handleGET);

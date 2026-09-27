@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canWorkTruck, loadCount, summarizeCount } from "@/lib/truck-counts";
+import { withOrg } from "@/lib/with-org";
 
 // POST /api/truck-counts/:id/submit — the count is finished and ready for a
 // manager. Every line must have a counted quantity (0 is fine, blank isn't).
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePOST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -47,3 +48,5 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   // The tech learns the totals once it's submitted, not before (blind count).
   return NextResponse.json({ count: { id: count.id, status: "SUBMITTED", submittedAt }, ...summary, lines: undefined });
 }
+
+export const POST = withOrg(handlePOST);

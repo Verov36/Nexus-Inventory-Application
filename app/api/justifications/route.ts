@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canReviewJustifications } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
 // GET /api/justifications?status=PENDING
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!canReviewJustifications((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -27,3 +28,5 @@ export async function GET(req: NextRequest) {
   });
   return NextResponse.json({ justifications });
 }
+
+export const GET = withOrg(handleGET);

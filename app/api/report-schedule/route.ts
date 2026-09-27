@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canRunReports } from "@/lib/roles";
 import { z } from "zod";
+import { withOrg } from "@/lib/with-org";
 
 async function getOrCreateSchedule() {
   const existing = await prisma.reportSchedule.findFirst();
@@ -10,7 +11,7 @@ async function getOrCreateSchedule() {
   return prisma.reportSchedule.create({ data: { frequencyDays: 7 } });
 }
 
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!canRunReports((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -21,7 +22,7 @@ export async function GET() {
 
 const updateSchema = z.object({ frequencyDays: z.number().int().min(1).max(90) });
 
-export async function PATCH(req: NextRequest) {
+async function handlePATCH(req: NextRequest) {
   const session = await auth();
   const role = (session?.user as { role?: string })?.role;
   if (!canRunReports(role) || role === "WAREHOUSE_MANAGER") {
@@ -49,3 +50,6 @@ export async function PATCH(req: NextRequest) {
   });
   return NextResponse.json({ schedule: updated });
 }
+
+export const GET = withOrg(handleGET);
+export const PATCH = withOrg(handlePATCH);

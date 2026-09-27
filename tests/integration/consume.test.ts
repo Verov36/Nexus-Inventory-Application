@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { hasDatabase, jsonRequest, mockAuthAs, resetDatabase, seedBasics, truckQty, type Seeded } from "./setup";
+import { TEST_ORG, hasDatabase, jsonRequest, mockAuthAs, resetDatabase, seedBasics, truckQty, type Seeded } from "./setup";
 
 // Parts used on a job: the only way stock leaves inventory for a customer.
 
@@ -54,7 +54,10 @@ describe.skipIf(!hasDatabase)("parts used on a job (real database)", () => {
 
     // Job cost comes from what was used: 2 x $12.50 + 1 x $4.00.
     const { generateUsageSummary } = await import("@/lib/reports");
-    const summary = await generateUsageSummary(new Date(Date.now() - 60_000), new Date(Date.now() + 60_000));
+    const { runAsOrg } = await import("@/lib/tenant");
+    const summary = await runAsOrg(TEST_ORG, () =>
+      generateUsageSummary(new Date(Date.now() - 60_000), new Date(Date.now() + 60_000))
+    );
     expect(summary.usedCost).toBe(29);
     expect(summary.byJob).toEqual([expect.objectContaining({ jobNumber: "J-1042", cost: 29 })]);
   });

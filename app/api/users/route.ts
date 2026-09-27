@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { runUnscoped } from "@/lib/tenant";
 import { auth } from "@/lib/auth";
 import { canManageUsers, ROLES } from "@/lib/roles";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { withOrg } from "@/lib/with-org";
 
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!canManageUsers((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -24,7 +26,7 @@ const createUserSchema = z.object({
   role: z.enum(ROLES),
 });
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   const actingRole = (session?.user as { role?: string })?.role;
   if (!canManageUsers(actingRole)) {
@@ -54,7 +56,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  const email = parsed.data.email;
+  const existing = await runUnscoped("email is unique system-wide", () => prisma.user.findUnique({ where: { email } }));
   if (existing) {
     return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 });
   }
@@ -72,3 +75,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ user }, { status: 201 });
 }
+
+export const GET = withOrg(handleGET);
+export const POST = withOrg(handlePOST);

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits, canViewFleet } from "@/lib/roles";
 import { findApplicableLimit } from "@/lib/limits";
+import { withOrg } from "@/lib/with-org";
 
 const MAX_PARTS = 12;
 
@@ -10,7 +11,7 @@ const MAX_PARTS = 12;
 // The parts most recently checked out to this truck, with what's on the
 // truck now and the cap that applies — the "tap to add" strip on the
 // checkout screen, so restocking the usual items doesn't need a scan.
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handleGET(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -61,3 +62,5 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ truckId: s
 
   return NextResponse.json({ parts });
 }
+
+export const GET = withOrg(handleGET);

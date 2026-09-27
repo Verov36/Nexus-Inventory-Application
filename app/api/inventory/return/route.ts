@@ -10,6 +10,7 @@ import {
   getTruckStock,
   resolveWarehouseId,
 } from "@/lib/inventory";
+import { withOrg } from "@/lib/with-org";
 
 const returnSchema = z.object({
   partId: z.string().min(1),
@@ -23,7 +24,7 @@ const returnSchema = z.object({
 // Moves stock the other direction from checkout: truck -> warehouse. Used
 // when a tech brings back parts that weren't used, or a manager corrects a
 // truck's count without writing the stock off entirely.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -104,3 +105,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Something went wrong recording this return — try again." }, { status: 500 });
   }
 }
+
+export const POST = withOrg(handlePOST);

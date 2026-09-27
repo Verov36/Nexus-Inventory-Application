@@ -2,6 +2,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { runUnscoped } from "@/lib/tenant";
 import { appBaseUrl, canSendLinks, sendEmail } from "@/lib/email";
 import { clientIp, rateLimitAll, tooManyRequests } from "@/lib/rate-limit";
 
@@ -37,7 +38,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, emailConfigured: false });
   }
 
-  const user = await prisma.user.findFirst({ where: { email: { equals: parsed.data.email, mode: "insensitive" } } });
+  // Signed-out, by email: looks across every organization (emails are unique system-wide).
+  const user = await runUnscoped("password reset by email", () =>
+    prisma.user.findFirst({ where: { email: { equals: parsed.data.email, mode: "insensitive" } } })
+  );
   if (user && !user.disabledAt) {
     const token = randomBytes(32).toString("hex");
     const tokenHash = createHash("sha256").update(token).digest("hex");

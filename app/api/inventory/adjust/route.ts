@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
 import { InsufficientStockError, adjustTruckStock, getTruckStock } from "@/lib/inventory";
+import { withOrg } from "@/lib/with-org";
 
 const adjustSchema = z.object({
   partId: z.string().min(1),
@@ -17,7 +18,7 @@ const adjustSchema = z.object({
 // correction. Unlike a return, nothing comes back to the warehouse, so this
 // is manager/admin only and always requires a stated reason for the audit
 // trail.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -81,3 +82,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Something went wrong recording this write-off — try again." }, { status: 500 });
   }
 }
+
+export const POST = withOrg(handlePOST);

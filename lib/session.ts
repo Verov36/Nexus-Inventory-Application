@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { runUnscoped } from "@/lib/tenant";
 
 // However active a session is, it ends this long after sign-in.
 const ABSOLUTE_MAX_SECONDS = Number(process.env.SESSION_ABSOLUTE_MAX_DAYS || 7) * 24 * 60 * 60;
@@ -7,6 +8,7 @@ export type SessionClaims = {
   sub?: string;
   sv?: number;
   authAt?: number;
+  org?: string;
   name?: string | null;
   role?: unknown;
   canReceiveParts?: unknown;
@@ -27,11 +29,24 @@ export async function revalidateSession<T extends SessionClaims>(token: T): Prom
   if (!token.sub) return null;
   const authAt = typeof token.authAt === "number" ? token.authAt : 0;
   if (Date.now() / 1000 - authAt > ABSOLUTE_MAX_SECONDS) return null;
-  const fresh = await prisma.user.findUnique({
-    where: { id: token.sub },
-    select: { name: true, role: true, canReceiveParts: true, disabledAt: true, sessionVersion: true },
-  });
+  const id = token.sub;
+  const fresh = await runUnscoped("session check by user id", () =>
+    prisma.user.findUnique({
+      where: { id },
+      select: {
+        name: true,
+        role: true,
+        canReceiveParts: true,
+        disabledAt: true,
+        sessionVersion: true,
+        organizationId: true,
+      },
+    })
+  );
   if (!fresh || fresh.disabledAt || fresh.sessionVersion !== (token.sv ?? 0)) return null;
+  // A session is bound to the organization it signed in to.
+  if (token.org && token.org !== fresh.organizationId) return null;
+  token.org = fresh.organizationId;
   token.name = fresh.name;
   token.role = fresh.role;
   token.canReceiveParts = fresh.canReceiveParts;

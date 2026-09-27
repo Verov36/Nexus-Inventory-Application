@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canEditParts } from "@/lib/roles";
 import { z } from "zod";
+import { withOrg } from "@/lib/with-org";
+import { defaultMarkupPct, priceFor } from "@/lib/pricing";
 
 // Deliberately excludes sku and barcodeValue — changing either would desync
 // from labels already printed and stuck on bins/shelves. Relabeling is a
@@ -10,7 +12,9 @@ import { z } from "zod";
 const updateSchema = z.object({
   name: z.string().trim().min(1).optional(),
   category: z.string().trim().optional().nullable(),
-  unitCost: z.number().nonnegative().optional().nullable(),
+  // Decimal(10,2): anything larger would overflow the column.
+  unitCost: z.number().nonnegative().max(99_999_999.99).optional().nullable(),
+  listPrice: z.number().nonnegative().max(99_999_999.99).optional().nullable(),
   reorderThreshold: z.number().int().min(0).optional(),
   description: z.string().trim().optional().nullable(),
   supplier: z.string().trim().optional().nullable(),
@@ -18,7 +22,7 @@ const updateSchema = z.object({
   reorderQty: z.number().int().min(0).optional(),
 });
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -26,10 +30,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   }
   const part = await prisma.part.findUnique({ where: { id: params.id } });
   if (!part) return NextResponse.json({ error: "Part not found" }, { status: 404 });
-  return NextResponse.json({ part });
+  const markupPct = await defaultMarkupPct();
+  return NextResponse.json({ part, pricing: { ...priceFor(part, markupPct), defaultMarkupPct: markupPct } });
 }
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -67,3 +72,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const part = await prisma.part.update({ where: { id: params.id }, data });
   return NextResponse.json({ part });
 }
+
+export const GET = withOrg(handleGET);
+export const PATCH = withOrg(handlePATCH);

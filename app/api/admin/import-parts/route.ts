@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roles";
 import { resolveWarehouseId } from "@/lib/inventory";
+import { withOrg } from "@/lib/with-org";
 
 /**
  * POST /api/admin/import-parts
@@ -18,7 +19,7 @@ import { resolveWarehouseId } from "@/lib/inventory";
  * CSV are updated — a catalog re-import without a reorderThreshold column no
  * longer wipes every manually-set reorder point back to 0.
  */
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!isSuperAdmin((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Only the super admin can run a mass import" }, { status: 403 });
@@ -139,17 +140,17 @@ export async function POST(req: NextRequest) {
       // Another part already owning this barcode (under a different SKU)
       // would hit the unique index and abort the row with a raw DB error —
       // give a readable reason instead.
-      const barcodeOwner = await prisma.part.findUnique({ where: { barcodeValue }, select: { sku: true } });
+      const barcodeOwner = await prisma.part.findFirst({ where: { barcodeValue }, select: { sku: true } });
       if (barcodeOwner && barcodeOwner.sku !== sku) {
         results.skipped.push({ line: i + 1, reason: `Barcode ${barcodeValue} already belongs to SKU ${barcodeOwner.sku}` });
         continue;
       }
 
-      const existing = await prisma.part.findUnique({ where: { sku } });
+      const existing = await prisma.part.findFirst({ where: { sku }, select: { id: true } });
       let partId: string;
       if (existing) {
         const updated = await prisma.part.update({
-          where: { sku },
+          where: { id: existing.id },
           data: {
             name,
             barcodeValue,
@@ -254,3 +255,5 @@ function parseCsvLine(line: string): string[] {
   result.push(current);
   return result;
 }
+
+export const POST = withOrg(handlePOST);

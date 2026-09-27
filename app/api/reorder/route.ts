@@ -6,9 +6,10 @@ import { canEditParts } from "@/lib/roles";
 import { getReorderList } from "@/lib/reorder";
 import { money } from "@/lib/money";
 import { csvCell } from "@/lib/csv";
+import { withOrg } from "@/lib/with-org";
 
 // GET /api/reorder[?format=csv] — what to order, grouped by supplier on the client.
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!canEditParts((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -65,7 +66,7 @@ const actionSchema = z.discriminatedUnion("action", [
 
 // POST /api/reorder — mark a part as ordered (so it stops nagging) or clear
 // that mark. Receiving the part clears it automatically.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -102,3 +103,6 @@ export async function POST(req: NextRequest) {
 function row(cols: (string | number)[]) {
   return cols.map(csvCell).join(",");
 }
+
+export const GET = withOrg(handleGET);
+export const POST = withOrg(handlePOST);

@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
 const assignSchema = z.object({ techId: z.string().min(1).nullable() });
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handlePOST(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!canManageTrucksAndLimits((session?.user as { role?: string })?.role)) {
@@ -58,3 +59,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ truckId: s
 
   return NextResponse.json({ truck });
 }
+
+export const POST = withOrg(handlePOST);

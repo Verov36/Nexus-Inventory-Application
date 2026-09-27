@@ -4,8 +4,9 @@ import { auth } from "@/lib/auth";
 import { canViewWarehouseInventory } from "@/lib/roles";
 import { money, toNumber } from "@/lib/money";
 import { csvCell } from "@/lib/csv";
+import { withOrg } from "@/lib/with-org";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -72,3 +73,5 @@ export async function GET(req: NextRequest) {
   const uncostedParts = items.filter((i) => i.unitCost === null).length;
   return NextResponse.json({ items, totalValue, uncostedParts });
 }
+
+export const GET = withOrg(handleGET);

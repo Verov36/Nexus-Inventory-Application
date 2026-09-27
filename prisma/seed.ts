@@ -11,10 +11,20 @@ async function main() {
     throw new Error("Refusing to seed a production database. Use /setup instead.");
   }
 
+  const org = await prisma.organization.upsert({
+    where: { id: "org_demo" },
+    update: {},
+    create: { id: "org_demo", name: "Demo company" },
+  });
+  const branch = await prisma.branch.upsert({
+    where: { id: "branch_demo" },
+    update: {},
+    create: { id: "branch_demo", organizationId: org.id, name: "Main branch" },
+  });
   const warehouse = await prisma.warehouse.upsert({
     where: { id: "main-warehouse" },
     update: {},
-    create: { id: "main-warehouse", name: "Main warehouse" },
+    create: { id: "main-warehouse", organizationId: org.id, branchId: branch.id, name: "Main warehouse" },
   });
 
   // A fresh random password each time the account is created, printed once.
@@ -26,6 +36,7 @@ async function main() {
     where: { email },
     update: {},
     create: {
+      organizationId: org.id,
       name: "Admin",
       email,
       passwordHash,
@@ -34,9 +45,9 @@ async function main() {
   });
 
   await prisma.reportSchedule.upsert({
-    where: { id: "default-schedule" },
+    where: { organizationId: org.id },
     update: {},
-    create: { id: "default-schedule", frequencyDays: 7 },
+    create: { organizationId: org.id, frequencyDays: 7 },
   });
 
   console.log("Seeded warehouse:", warehouse.id);

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canReceiveWarehouseStock } from "@/lib/roles";
 import { adjustWarehouseStock, resolveWarehouseId } from "@/lib/inventory";
+import { withOrg } from "@/lib/with-org";
 
 const receiveSchema = z.object({
   partId: z.string().min(1),
@@ -15,7 +16,7 @@ const receiveSchema = z.object({
 // Records a RECEIVE transaction and increments the warehouse StockLevel for
 // this part. This is the "checked in and accounted for" step before any part
 // is eligible to be assigned out to a truck.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -97,3 +98,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withOrg(handlePOST);

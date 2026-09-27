@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { withOrg } from "@/lib/with-org";
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -35,3 +36,5 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
   return NextResponse.json({ transactions: withDirection });
 }
+
+export const GET = withOrg(handleGET);

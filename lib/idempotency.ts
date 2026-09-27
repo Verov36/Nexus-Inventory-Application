@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { Tx } from "@/lib/prisma";
 
 export type StoredResponse = { status: number; body: Record<string, unknown> };
 
@@ -13,7 +14,7 @@ export type StoredResponse = { status: number; body: Record<string, unknown> };
  * included — rolls back, so a failed attempt can simply be retried.
  */
 export async function oncePerKey(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   scope: string,
   key: string | undefined,
   work: () => Promise<StoredResponse>

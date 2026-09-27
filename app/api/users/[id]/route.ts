@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { runUnscoped } from "@/lib/tenant";
 import { auth } from "@/lib/auth";
 import { canManageUsers, ROLES, MAX_DESIGNATED_RECEIVERS } from "@/lib/roles";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { withOrg } from "@/lib/with-org";
 
 const updateSchema = z.object({
   name: z.string().trim().min(1).optional(),
@@ -15,7 +17,7 @@ const updateSchema = z.object({
   active: z.boolean().optional(),
 });
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   const actingRole = (session?.user as { role?: string })?.role;
@@ -75,7 +77,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (name !== undefined) data.name = name;
 
   if (email !== undefined && email !== target.email) {
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await runUnscoped("email is unique system-wide", () => prisma.user.findUnique({ where: { email } }));
     if (existing) {
       return NextResponse.json({ error: "Another user already has that email" }, { status: 409 });
     }
@@ -179,7 +181,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   return NextResponse.json({ user });
 }
 
-export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handleDELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   const actingRole = (session?.user as { role?: string })?.role;
@@ -221,3 +223,6 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   }
   return NextResponse.json({ ok: true });
 }
+
+export const PATCH = withOrg(handlePATCH);
+export const DELETE = withOrg(handleDELETE);

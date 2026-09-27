@@ -15,6 +15,7 @@ export default function SetupPage() {
     password: "",
     confirm: "",
     warehouseName: "Main warehouse",
+    organizationName: "",
     setupToken: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export default function SetupPage() {
           email: form.email,
           password: form.password,
           warehouseName: form.warehouseName,
+          organizationName: form.organizationName.trim() || undefined,
           setupToken: form.setupToken || undefined,
         }),
       });
@@ -118,6 +120,15 @@ export default function SetupPage() {
             />
           </>
         )}
+        <input
+          placeholder="Company name"
+          aria-label="Company name"
+          value={form.organizationName}
+          onChange={(e) => setForm({ ...form, organizationName: e.target.value })}
+          className={input}
+          required
+          autoComplete="organization"
+        />
         <input
           placeholder="Your name"
           value={form.name}

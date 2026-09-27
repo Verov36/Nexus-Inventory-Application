@@ -22,6 +22,7 @@ import {
   LogOut,
   type LucideIcon,
   Wrench,
+  Building2,
 } from "lucide-react";
 import {
   ROLE_LABELS,
@@ -87,6 +88,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/manager/reports", label: "Usage reports", icon: BarChart3, visible: (role) => canRunReports(role) },
   { href: "/manager/audit", label: "Inventory audit", icon: ShieldCheck, visible: (role) => canRunReports(role) },
   { href: "/admin/users", label: "Users & permissions", icon: Users, visible: (role) => canManageUsers(role) },
+  { href: "/admin/organization", label: "Company settings", icon: Building2, visible: (role) => canManageUsers(role) },
   { href: "/admin/import", label: "Mass import", icon: Upload, visible: (role) => isSuperAdmin(role) },
 ];
 

@@ -4,11 +4,12 @@ import { canRunReports } from "@/lib/roles";
 import { generateUsageSummary, getTransactionRows } from "@/lib/reports";
 import { money, toNumber } from "@/lib/money";
 import { csvCell } from "@/lib/csv";
+import { withOrg } from "@/lib/with-org";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // GET /api/reports/weekly?from=2026-07-01&to=2026-07-08&format=json|csv
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!canRunReports((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -84,3 +85,5 @@ function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
   });
   return [header.join(","), ...lines].join("\n");
 }
+
+export const GET = withOrg(handleGET);

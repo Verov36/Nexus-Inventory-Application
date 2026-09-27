@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canWorkTruck } from "@/lib/truck-counts";
 import { consumeFromTruck } from "@/lib/consume";
 import { idempotencyKeyFrom } from "@/lib/idempotency";
+import { withOrg } from "@/lib/with-org";
 
 const schema = z.object({
   truckId: z.string().min(1),
@@ -21,7 +22,7 @@ const schema = z.object({
 // truck. A tech on their own truck; managers and admins on any truck.
 // Send an Idempotency-Key header (or idempotencyKey in the body) so a retry
 // after a dropped connection can't record the same parts twice.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   const role = (session.user as { role?: string }).role;
@@ -52,3 +53,5 @@ export async function POST(req: NextRequest) {
   });
   return NextResponse.json(outcome.body, { status: outcome.status });
 }
+
+export const POST = withOrg(handlePOST);

@@ -5,10 +5,11 @@ import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits, canViewFleet } from "@/lib/roles";
 import { Prisma } from "@prisma/client";
 import { canWorkTruck, countInclude, presentCount, summarizeCount } from "@/lib/truck-counts";
+import { withOrg } from "@/lib/with-org";
 
 // GET /api/truck-counts?truckId=&status=OPEN|SUBMITTED|APPLIED|DISCARDED
 // Managers see every truck's counts; a tech sees only their own truck's.
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -70,7 +71,7 @@ const startSchema = z.object({ truckId: z.string().min(1) });
 
 // POST /api/truck-counts { truckId } — start a count: snapshot what the
 // system thinks is on the truck. Only one OPEN/SUBMITTED count per truck.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -137,3 +138,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ count: presentCount(count, role) }, { status: 201 });
 }
+
+export const GET = withOrg(handleGET);
+export const POST = withOrg(handlePOST);

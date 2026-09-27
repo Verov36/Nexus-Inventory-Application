@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
 import { InsufficientStockError } from "@/lib/inventory";
 import { CountStateConflict, applyCount, canWorkTruck, loadCount, summarizeCount } from "@/lib/truck-counts";
+import { withOrg } from "@/lib/with-org";
 
 const reviewSchema = z.object({ decision: z.enum(["APPLY", "DISCARD"]) });
 
@@ -14,7 +15,7 @@ const reviewSchema = z.object({ decision: z.enum(["APPLY", "DISCARD"]) });
 // count — a count someone applies to their own numbers checks nothing. (The
 // super admin is exempt so a one-person shop isn't stuck.) DISCARD is also
 // allowed for whoever started an OPEN count (a tech abandoning their own).
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePOST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -106,3 +107,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ error: "Something went wrong applying this count — nothing was changed." }, { status: 500 });
   }
 }
+
+export const POST = withOrg(handlePOST);

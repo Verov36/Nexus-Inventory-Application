@@ -3,9 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canReceiveWarehouseStock } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
 // GET /api/parts?barcode=XYZ  -> find one part by its label value
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
   if (!barcode) {
     return NextResponse.json({ error: "barcode query param is required" }, { status: 400 });
   }
-  const part = await prisma.part.findUnique({ where: { barcodeValue: barcode } });
+  const part = await prisma.part.findFirst({ where: { barcodeValue: barcode } });
   return NextResponse.json({ part });
 }
 
@@ -29,7 +30,7 @@ const createPartSchema = z.object({
 });
 
 // POST /api/parts -> create a new part when a scanned barcode has no match yet
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -62,8 +63,8 @@ export async function POST(req: NextRequest) {
   };
 
   const [byBarcode, bySku] = await Promise.all([
-    prisma.part.findUnique({ where: { barcodeValue: data.barcodeValue } }),
-    prisma.part.findUnique({ where: { sku: data.sku } }),
+    prisma.part.findFirst({ where: { barcodeValue: data.barcodeValue } }),
+    prisma.part.findFirst({ where: { sku: data.sku } }),
   ]);
   if (byBarcode) {
     return NextResponse.json({ error: "A part with this barcode already exists" }, { status: 409 });
@@ -83,3 +84,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Couldn't create that part — try again." }, { status: 500 });
   }
 }
+
+export const GET = withOrg(handleGET);
+export const POST = withOrg(handlePOST);

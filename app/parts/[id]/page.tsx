@@ -15,6 +15,7 @@ type Part = {
   category: string | null;
   description: string | null;
   unitCost: string | null;
+  listPrice?: string | null;
   barcodeValue: string;
   reorderThreshold: number;
   supplier?: string | null;
@@ -51,12 +52,18 @@ export default function PartDetailPage() {
   const canPrint = editable || canReceiveWarehouseStock(role, canReceiveParts);
 
   const [part, setPart] = useState<Part | null>(null);
+  const [pricing, setPricing] = useState<{
+    unitPrice: number | null;
+    source: "list" | "markup" | null;
+    defaultMarkupPct: number;
+  } | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [form, setForm] = useState({
     name: "",
     category: "",
     reorderThreshold: "",
     unitCost: "",
+    listPrice: "",
     description: "",
     supplier: "",
     supplierPartNumber: "",
@@ -73,11 +80,13 @@ export default function PartDetailPage() {
       .then((d) => {
         if (d?.part) {
           setPart(d.part);
+          setPricing(d.pricing ?? null);
           setForm({
             name: d.part.name,
             category: d.part.category ?? "",
             reorderThreshold: String(d.part.reorderThreshold),
             unitCost: d.part.unitCost === null || d.part.unitCost === undefined ? "" : String(d.part.unitCost),
+            listPrice: d.part.listPrice === null || d.part.listPrice === undefined ? "" : String(d.part.listPrice),
             description: d.part.description ?? "",
             supplier: d.part.supplier ?? "",
             supplierPartNumber: d.part.supplierPartNumber ?? "",
@@ -102,6 +111,12 @@ export default function PartDetailPage() {
       setError("Unit cost must be a number of 0 or more, or left blank.");
       return;
     }
+    const priceText = form.listPrice.trim().replace(/^\$/, "");
+    const listPrice = priceText === "" ? null : Number(priceText);
+    if (listPrice !== null && (!Number.isFinite(listPrice) || listPrice < 0)) {
+      setError("List price must be a number of 0 or more, or left blank to use the default markup.");
+      return;
+    }
     const reorderQty = form.reorderQty.trim() === "" ? 0 : Number(form.reorderQty);
     if (!Number.isInteger(reorderQty) || reorderQty < 0) {
       setError("Reorder quantity must be a whole number of 0 or more (0 lets the app suggest).");
@@ -118,6 +133,7 @@ export default function PartDetailPage() {
           category: form.category.trim() || null,
           reorderThreshold: threshold,
           unitCost,
+          listPrice,
           description: form.description.trim() || null,
           supplier: form.supplier.trim() || null,
           supplierPartNumber: form.supplierPartNumber.trim() || null,
@@ -131,6 +147,11 @@ export default function PartDetailPage() {
       }
       setPart(data.part);
       setEditing(false);
+      // The selling price depends on cost, list price and the company markup.
+      fetch(`/api/parts/${params.id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d?.pricing && setPricing(d.pricing))
+        .catch(() => {});
     } catch {
       setError("Couldn't reach the server — check your connection.");
     } finally {
@@ -210,6 +231,21 @@ export default function PartDetailPage() {
                 </dd>
               </div>
               <div>
+                <dt className="text-nexus-steel">Sells for</dt>
+                <dd className="font-data font-medium text-nexus-navy">
+                  {pricing?.unitPrice === null || pricing?.unitPrice === undefined ? (
+                    <span className="text-nexus-warn">no price — set a cost or list price</span>
+                  ) : (
+                    <>
+                      {formatMoney(pricing.unitPrice)}{" "}
+                      <span className="font-sans text-xs font-normal text-nexus-steel">
+                        {pricing.source === "list" ? "list price" : `cost + ${pricing.defaultMarkupPct}%`}
+                      </span>
+                    </>
+                  )}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-nexus-steel">Supplier</dt>
                 <dd className="text-nexus-navy">
                   {part.supplier || <span className="text-nexus-steel">not set</span>}
@@ -285,6 +321,22 @@ export default function PartDetailPage() {
                   value={form.unitCost}
                   onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                   placeholder="0.00"
+                  className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3 font-data"
+                />
+              </div>
+              <div>
+                <label htmlFor="part-list-price" className="block text-xs text-nexus-steel">
+                  List price ($) — blank = cost + {pricing?.defaultMarkupPct ?? 25}%
+                </label>
+                <input
+                  id="part-list-price"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={form.listPrice}
+                  onChange={(e) => setForm({ ...form, listPrice: e.target.value })}
+                  placeholder="auto"
                   className="tap-target mt-1 w-32 rounded-lg border-2 border-nexus-steel/30 px-3 font-data"
                 />
               </div>

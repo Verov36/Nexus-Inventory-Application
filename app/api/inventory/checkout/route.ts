@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { performCheckout } from "@/lib/checkout";
+import { withOrg } from "@/lib/with-org";
 
 // POST /api/inventory/checkout — single-part checkout. Kept for older
 // clients; the cart checkout at /api/inventory/checkout/batch is the same
@@ -27,7 +28,7 @@ const checkoutSchema = z
     path: ["jobNumber"],
   });
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -57,3 +58,5 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json(outcome.body, { status: outcome.status });
 }
+
+export const POST = withOrg(handlePOST);

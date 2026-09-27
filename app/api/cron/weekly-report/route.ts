@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { runAsOrg, runUnscoped } from "@/lib/tenant";
 import { generateUsageSummary } from "@/lib/reports";
 
 /**
@@ -32,32 +33,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   }
 
-  const schedule = await prisma.reportSchedule.findFirst();
-  if (!schedule) {
-    return NextResponse.json({ skipped: true, reason: "No report schedule configured yet" });
-  }
-
+  // Every organization whose report is due, each run inside its own
+  // organization so it only ever sees its own transactions.
   const now = new Date();
-  if (schedule.nextRunAt > now) {
-    return NextResponse.json({ skipped: true, nextRunAt: schedule.nextRunAt });
+  const due = await runUnscoped("find due report schedules", () =>
+    prisma.reportSchedule.findMany({ where: { nextRunAt: { lte: now } } })
+  );
+
+  const ran: { organizationId: string; snapshotId: string }[] = [];
+  for (const schedule of due) {
+    const result = await runAsOrg(schedule.organizationId, async () => {
+      const nextRunAt = new Date(now.getTime() + schedule.frequencyDays * 24 * 60 * 60 * 1000);
+      // Claim this run first (conditional on it still being due) so a cron
+      // retry or two overlapping invocations produce one snapshot, not two.
+      const claimed = await prisma.reportSchedule.updateMany({
+        where: { id: schedule.id, nextRunAt: { lte: now } },
+        data: { lastRunAt: now, nextRunAt },
+      });
+      if (claimed.count === 0) return null;
+      const from = schedule.lastRunAt ?? new Date(now.getTime() - schedule.frequencyDays * 24 * 60 * 60 * 1000);
+      const summary = await generateUsageSummary(from, now);
+      return prisma.reportSnapshot.create({
+        data: { rangeFrom: from, rangeTo: now, summaryJson: JSON.stringify(summary) },
+      });
+    });
+    if (result) ran.push({ organizationId: schedule.organizationId, snapshotId: result.id });
   }
 
-  const from = schedule.lastRunAt ?? new Date(now.getTime() - schedule.frequencyDays * 24 * 60 * 60 * 1000);
-  const summary = await generateUsageSummary(from, now);
-
-  const snapshot = await prisma.reportSnapshot.create({
-    data: {
-      rangeFrom: from,
-      rangeTo: now,
-      summaryJson: JSON.stringify(summary),
-    },
-  });
-
-  const nextRunAt = new Date(now.getTime() + schedule.frequencyDays * 24 * 60 * 60 * 1000);
-  await prisma.reportSchedule.update({
-    where: { id: schedule.id },
-    data: { lastRunAt: now, nextRunAt },
-  });
-
-  return NextResponse.json({ ran: true, snapshotId: snapshot.id, nextRunAt });
+  return NextResponse.json({ ran: ran.length, snapshots: ran });
 }

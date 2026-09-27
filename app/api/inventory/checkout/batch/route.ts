@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { performCheckout } from "@/lib/checkout";
+import { withOrg } from "@/lib/with-org";
 
 // POST /api/inventory/checkout/batch — check a whole cart out to a truck
 // in one transaction. Either every line moves or nothing does.
@@ -27,7 +28,7 @@ const batchSchema = z
     path: ["jobNumber"],
   });
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -52,3 +53,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(outcome.body, { status: outcome.status });
 }
+
+export const POST = withOrg(handlePOST);

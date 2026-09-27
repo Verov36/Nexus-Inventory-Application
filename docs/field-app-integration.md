@@ -1,6 +1,6 @@
 # Field App ↔ Inventory integration contract
 
-**Status: DRAFT v0.1 (2026-09-26). Not built yet: don't code against it until it says v1.0.**
+**Status: DRAFT v0.2 (2026-09-27). Organizations, branches and pricing are built on the Inventory side; the /api/v1 endpoints and API keys are not yet. Don't code against it until it says v1.0.**
 
 The Inventory app is the only source of truth for parts, stock, truck loads,
 parts used on jobs, part costs and (later) purchasing. The Field App keeps
@@ -95,13 +95,15 @@ All under `/api/v1`, JSON, org taken from the API key.
 or revoked key), 403 (wrong org), 404, 409 (stock or state conflict), 429 (rate
 limit, with `Retry-After`) and 5xx (safe to retry with the same Idempotency-Key).
 
-## 4. Pricing (open decision for the user)
+## 4. Pricing (decided 2026-09-27: Inventory owns the price)
 
-The Field App currently bills parts at `Part.cost` + a hard-coded 25%
-(`src/lib/billing.ts`, `PARTS_MARKUP`). Proposal: Inventory owns the price.
-Each part gets an optional list price, with an org-level default markup
-(default 25%) used when no price is set. The API returns `unitPrice`, so every
-screen and invoice agrees. This needs the user's OK.
+Each part has an optional list price. Without one, the price is unit cost plus
+the organization's default markup (default 25%, set in Inventory → Company
+settings). With neither, there's no price (`unitPrice: null`), never a guessed
+$0. The API returns `unitPrice` and `priceSource: "list" | "markup"`, so quotes,
+the completion sheet and invoices all agree. The Field App's hard-coded
+`PARTS_MARKUP` in `src/lib/billing.ts` goes away at switchover. The rule
+lives in `lib/pricing.ts`.
 
 ## 5. Offline and failure behaviour (Field App side)
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
 const limitSchema = z
   .object({
@@ -14,7 +15,7 @@ const limitSchema = z
     message: "Set exactly one of partId or category, not both",
   });
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handleGET(_req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -27,7 +28,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ truckId: s
   return NextResponse.json({ limits });
 }
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handlePOST(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -94,7 +95,7 @@ const deleteSchema = z.object({ limitId: z.string().min(1) });
 // DELETE /api/trucks/:truckId/limits  { limitId } — remove a cap entirely.
 // Previously the only way to "remove" a cap was to set it to 0, which
 // actually blocks every restock of that part rather than lifting the limit.
-export async function DELETE(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
+async function handleDELETE(req: NextRequest, ctx: { params: Promise<{ truckId: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -119,3 +120,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ truckId:
   if (result.count === 0) return NextResponse.json({ error: "Cap not found" }, { status: 404 });
   return NextResponse.json({ deleted: true });
 }
+
+export const GET = withOrg(handleGET);
+export const POST = withOrg(handlePOST);
+export const DELETE = withOrg(handleDELETE);

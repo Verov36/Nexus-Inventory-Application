@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canEditParts } from "@/lib/roles";
 import { z } from "zod";
+import { withOrg } from "@/lib/with-org";
 
 const bulkSchema = z.union([
   z.object({ mode: z.literal("flat"), value: z.number().int().min(0) }),
@@ -15,7 +16,7 @@ const bulkSchema = z.union([
 // reorderThreshold = round(currentQuantity * percent / 100), minimum 1 —
 // a quick way to seed sensible starting points from a fresh import rather
 // than leaving everything at the default of 0.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!canEditParts((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Only a warehouse manager or manager can do this" }, { status: 403 });
@@ -49,3 +50,5 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ updated });
 }
+
+export const POST = withOrg(handlePOST);

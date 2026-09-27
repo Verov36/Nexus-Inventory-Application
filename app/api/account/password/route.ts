@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
+import { withOrg } from "@/lib/with-org";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
@@ -11,7 +12,7 @@ const schema = z.object({
 });
 
 // POST /api/account/password — a signed-in user changes their own password.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -50,3 +51,5 @@ export async function POST(req: NextRequest) {
   ]);
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withOrg(handlePOST);

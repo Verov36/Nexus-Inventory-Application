@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { CountStateConflict, canWorkTruck, loadCount, presentCount as present } from "@/lib/truck-counts";
+import { withOrg } from "@/lib/with-org";
 
 // GET /api/truck-counts/:id — the count with its lines and variances.
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -28,7 +29,7 @@ const patchSchema = z.object({
 
 // PATCH /api/truck-counts/:id — save counted quantities, add a part that
 // was found on the truck but wasn't in the snapshot, or set notes. OPEN only.
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -98,3 +99,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const updated = await loadCount(params.id);
   return NextResponse.json({ count: present(updated!, role) });
 }
+
+export const GET = withOrg(handleGET);
+export const PATCH = withOrg(handlePATCH);

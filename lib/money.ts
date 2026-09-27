@@ -7,9 +7,14 @@ export function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Money to two decimals, avoiding float drift like 0.1 + 0.2. */
+/**
+ * Money to two decimals, half away from zero (1.005 -> 1.01, -2.345 -> -2.35).
+ * The tiny epsilon absorbs float representation error — 1.005 is stored as
+ * 1.00499999…, which plain Math.round(x * 100) would round down.
+ */
 export function money(value: number): number {
-  return Math.round(value * 100) / 100;
+  const sign = value < 0 ? -1 : 1;
+  return (sign * Math.round(Math.abs(value) * 100 + 1e-7)) / 100;
 }
 
 export function formatMoney(value: number): string {

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canRunReports } from "@/lib/roles";
+import { withOrg } from "@/lib/with-org";
 
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!canRunReports((session?.user as { role?: string })?.role)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -22,3 +23,5 @@ export async function GET() {
     })),
   });
 }
+
+export const GET = withOrg(handleGET);

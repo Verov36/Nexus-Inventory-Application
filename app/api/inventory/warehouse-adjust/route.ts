@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canEditParts } from "@/lib/roles";
 import { InsufficientStockError, adjustWarehouseStock, lockStockQty, resolveWarehouseId } from "@/lib/inventory";
+import { withOrg } from "@/lib/with-org";
 
 const adjustSchema = z.object({
   partId: z.string().min(1),
@@ -27,7 +28,7 @@ class StockMoved extends Error {
 // out the difference itself so nobody has to do math to figure out "how
 // much do I add or remove" mid-count. Always requires a reason, and always
 // leaves a signed ADJUSTMENT transaction behind either way.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -123,3 +124,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Something went wrong saving this correction — try again." }, { status: 500 });
   }
 }
+
+export const POST = withOrg(handlePOST);
