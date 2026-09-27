@@ -122,17 +122,15 @@ every push and pull request, with its own throwaway Postgres.
 
 ## Deploying / applying migrations on Railway
 
-Railway builds from `main` and runs `npm start`. Migrations are **not** run
-automatically on deploy — after pushing a change that adds a migration, run:
+Railway builds from `main` and runs `npm start`. `railway.json` runs
+`prisma migrate deploy` as a **pre-deploy step**, so a release never goes
+live ahead of its schema (if a migration fails, the old version keeps
+serving). Railway then waits for `/api/health` (which checks the database)
+before routing traffic.
 
-```bash
-railway run npx prisma migrate deploy
-```
-
-The migration `20260911120000_partial_unique_indexes` contains the partial
-unique indexes that used to live in `prisma/manual-fixes.sql`. It's safe to
-apply on a database where the manual script already ran (every statement is
-`IF NOT EXISTS`).
+Required variables in production: `DATABASE_URL`, `AUTH_SECRET`,
+`SETUP_TOKEN` (first-run only), `APP_URL`. Optional: `RESEND_API_KEY` +
+`EMAIL_FROM` for reset emails, `CRON_SECRET` for scheduled reports.
 
 Set `CRON_SECRET` in the Railway variables before adding the report cron job
 (see Phase 5 below) — the endpoint refuses to run until it's set.

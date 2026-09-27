@@ -157,6 +157,7 @@ export default function InventoryHomePage() {
           partId,
           warehouseId: DEFAULT_WAREHOUSE_ID,
           actualQuantity: Number(actualQty),
+          expectedQuantity: items.find((i) => i.partId === partId)?.quantity,
           reason: adjustReason,
         }),
       });

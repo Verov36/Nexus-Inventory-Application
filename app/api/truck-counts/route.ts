@@ -3,7 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits, canViewFleet } from "@/lib/roles";
-import { canWorkTruck, countInclude, summarizeCount } from "@/lib/truck-counts";
+import { Prisma } from "@prisma/client";
+import { canWorkTruck, countInclude, presentCount, summarizeCount } from "@/lib/truck-counts";
 
 // GET /api/truck-counts?truckId=&status=OPEN|SUBMITTED|APPLIED|DISCARDED
 // Managers see every truck's counts; a tech sees only their own truck's.
@@ -42,6 +43,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     counts: counts.map((c) => {
       const summary = summarizeCount(c.lines);
+      // Blind while OPEN: a tech shouldn't be able to tweak numbers until the
+      // variance reads zero.
+      const blind = c.status === "OPEN" && !canManageTrucksAndLimits(role);
       return {
         id: c.id,
         status: c.status,
@@ -54,9 +58,9 @@ export async function GET(req: NextRequest) {
         reviewedAt: c.reviewedAt,
         totalLines: summary.totalLines,
         countedLines: summary.countedLines,
-        unitsShort: summary.unitsShort,
-        unitsOver: summary.unitsOver,
-        varianceValue: summary.varianceValue,
+        unitsShort: blind ? null : summary.unitsShort,
+        unitsOver: blind ? null : summary.unitsOver,
+        varianceValue: blind ? null : summary.varianceValue,
       };
     }),
   });
@@ -105,22 +109,31 @@ export async function POST(req: NextRequest) {
           existing.status === "OPEN"
             ? "A count is already in progress for this truck — continue it instead."
             : "A count for this truck is waiting for a manager to review. Ask them to apply or discard it first.",
-        count: existing,
+        count: presentCount(existing, role),
       },
       { status: 409 }
     );
   }
 
-  const count = await prisma.truckCount.create({
-    data: {
-      truckId: truck.id,
-      startedById: session.user.id,
-      lines: {
-        create: truck.stockLevels.map((sl) => ({ partId: sl.partId, expectedQty: sl.quantity })),
+  let count;
+  try {
+    count = await prisma.truckCount.create({
+      data: {
+        truckId: truck.id,
+        startedById: session.user.id,
+        lines: {
+          create: truck.stockLevels.map((sl) => ({ partId: sl.partId, expectedQty: sl.quantity })),
+        },
       },
-    },
-    include: countInclude,
-  });
+      include: countInclude,
+    });
+  } catch (err) {
+    // truck_count_one_in_progress: someone started one a moment ago.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json({ error: "A count was just started for this truck — continue that one." }, { status: 409 });
+    }
+    throw err;
+  }
 
-  return NextResponse.json({ count }, { status: 201 });
+  return NextResponse.json({ count: presentCount(count, role) }, { status: 201 });
 }

@@ -165,6 +165,13 @@ model TruckCountLine {
   part        Part       @relation(fields: [partId], references: [id])
   expectedQty Int
   countedQty  Int?
+  // When countedQty was last entered. Applying the count sets the truck to
+  // countedQty plus whatever moved on or off it after this moment, so stock
+  // that moved while the count was open isn't counted twice or lost.
+  countedAt   DateTime?
+  // The adjustment actually posted when the count was applied (can differ
+  // from countedQty - expectedQty when stock moved during the count).
+  appliedDelta Int?
 
   @@unique([countId, partId])
 }

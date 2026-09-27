@@ -2,28 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { canManageTrucksAndLimits } from "@/lib/roles";
-import { canWorkTruck, loadCount, summarizeCount } from "@/lib/truck-counts";
-
-type LoadedCount = NonNullable<Awaited<ReturnType<typeof loadCount>>>;
-
-function present(count: LoadedCount, role: string | undefined) {
-  const summary = summarizeCount(count.lines);
-  // Blind count for techs: they enter what they see without being told what
-  // the system expects, which is what makes a count worth anything. Once
-  // it's submitted the numbers are visible to everyone involved.
-  const showExpected = canManageTrucksAndLimits(role) || count.status !== "OPEN";
-  return {
-    ...count,
-    ...summary,
-    lines: summary.lines.map((l) =>
-      showExpected ? l : { ...l, expectedQty: null, variance: null, varianceValue: null }
-    ),
-    unitsShort: showExpected ? summary.unitsShort : null,
-    unitsOver: showExpected ? summary.unitsOver : null,
-    varianceValue: showExpected ? summary.varianceValue : null,
-  };
-}
+import { CountStateConflict, canWorkTruck, loadCount, presentCount as present } from "@/lib/truck-counts";
 
 // GET /api/truck-counts/:id — the count with its lines and variances.
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -85,11 +64,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (!part) return NextResponse.json({ error: "Part not found" }, { status: 404 });
   }
 
-  await prisma.$transaction(async (tx) => {
+  try {
+    await prisma.$transaction(async (tx) => {
+    // Lock the count and re-check it's still OPEN, so edits can't land on a
+    // count that was submitted or applied since it was loaded above.
+    const [locked] = await tx.$queryRaw<{ status: string }[]>`
+      SELECT "status" FROM "TruckCount" WHERE "id" = ${count.id} FOR UPDATE`;
+    if (locked?.status !== "OPEN") throw new CountStateConflict();
+    const now = new Date();
     for (const l of lines ?? []) {
       const existing = lineByPart.get(l.partId);
-      if (!existing) continue;
-      await tx.truckCountLine.update({ where: { id: existing.id }, data: { countedQty: l.countedQty } });
+      if (!existing || existing.countedQty === l.countedQty) continue;
+      await tx.truckCountLine.update({
+        where: { id: existing.id },
+        data: { countedQty: l.countedQty, countedAt: l.countedQty === null ? null : now },
+      });
     }
     if (addPartId && !lineByPart.has(addPartId)) {
       // Something found on the truck that the system had at 0.
@@ -98,7 +87,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (notes !== undefined) {
       await tx.truckCount.update({ where: { id: count.id }, data: { notes: notes || null } });
     }
-  });
+    });
+  } catch (err) {
+    if (err instanceof CountStateConflict) {
+      return NextResponse.json({ error: "This count was submitted or closed and can't be edited." }, { status: 409 });
+    }
+    throw err;
+  }
 
   const updated = await loadCount(params.id);
   return NextResponse.json({ count: present(updated!, role) });

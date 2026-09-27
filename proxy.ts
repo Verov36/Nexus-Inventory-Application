@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 
 // Pages and endpoints reachable without a session.
 const PUBLIC_PAGES = ["/login", "/setup", "/forgot-password", "/reset-password"];
-const PUBLIC_API_PREFIXES = ["/api/auth", "/api/setup", "/api/cron"];
+const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/setup", "/api/cron/", "/api/health"];
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
@@ -12,7 +12,8 @@ export default auth((req) => {
   const isPublicPage = PUBLIC_PAGES.some((p) => path === p || path.startsWith(`${p}/`));
   const isPublicApi = PUBLIC_API_PREFIXES.some((p) => path.startsWith(p));
 
-  // /api/cron authenticates itself with CRON_SECRET (no browser session);
+  // /api/cron/* authenticates itself with CRON_SECRET (no browser session);
+  // /api/health is the load balancer's liveness check;
   // /api/setup is inert once the first user exists; /api/auth is NextAuth
   // plus the forgot/reset endpoints.
   if (isPublicApi) return;

@@ -100,7 +100,7 @@ function CountsScreen() {
     if (
       decision === "APPLY" &&
       !confirm(
-        `Apply this count? ${detail.unitsShort} units will be written off and ${detail.unitsOver} added to ${detail.truck.label}'s stock as count corrections.`
+        `Apply this count? About ${detail.unitsShort} units will be written off and ${detail.unitsOver} added to ${detail.truck.label}'s stock as count corrections (adjusted for anything that moved on or off the truck while it was being counted).`
       )
     )
       return;
@@ -120,7 +120,9 @@ function CountsScreen() {
       }
       setNotice(
         decision === "APPLY"
-          ? `Applied — ${d.adjustments ?? 0} ${d.adjustments === 1 ? "adjustment" : "adjustments"} posted to ${detail.truck.label}.`
+          ? `Applied — ${d.adjustments ?? 0} ${d.adjustments === 1 ? "adjustment" : "adjustments"} posted to ${detail.truck.label}${
+              d.movedDuringCount ? ` (${d.movedDuringCount} accounted for stock that moved during the count)` : ""
+            }.`
           : "Count discarded."
       );
       setOpenId(null);
@@ -240,17 +242,20 @@ function CountsScreen() {
 
             {(detail.status === "SUBMITTED" || detail.status === "OPEN") && (
               <div className="mt-4 flex gap-2">
-                <Button onClick={() => review("APPLY")} disabled={busy || detail.countedLines < detail.totalLines} icon={<Check size={16} />} className="flex-1">
-                  {busy ? "Working…" : "Apply count"}
-                </Button>
+                {detail.status === "SUBMITTED" && (
+                  <Button onClick={() => review("APPLY")} disabled={busy} icon={<Check size={16} />} className="flex-1">
+                    {busy ? "Working…" : "Apply count"}
+                  </Button>
+                )}
                 <Button onClick={() => review("DISCARD")} disabled={busy} variant="danger" icon={<Trash2 size={16} />}>
                   Discard
                 </Button>
               </div>
             )}
-            {detail.status === "OPEN" && detail.countedLines < detail.totalLines && (
+            {detail.status === "OPEN" && (
               <p className="mt-2 text-xs text-nexus-steel">
-                Still being counted ({detail.countedLines}/{detail.totalLines} lines) — it can be applied once every line is entered.
+                Still being counted ({detail.countedLines}/{detail.totalLines} lines). It can be applied after whoever is
+                counting submits it — and by someone other than the person who counted.
               </p>
             )}
             {detail.reviewedBy && detail.reviewedAt && (

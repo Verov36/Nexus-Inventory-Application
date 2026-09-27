@@ -208,7 +208,21 @@ describe.skipIf(!hasDatabase)("truck counts (real database)", () => {
       }),
       { params: Promise.resolve({ id: countId }) }
     );
-    const review = await import("@/app/api/truck-counts/[id]/review/route");
+    // Can't apply while it's still OPEN, even as a manager.
+    let review = await import("@/app/api/truck-counts/[id]/review/route");
+    const early = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: Promise.resolve({ id: countId }) });
+    expect(early.status).toBe(409);
+    expect((await submit.POST(await jsonRequest(`/api/truck-counts/${countId}/submit`, "POST"), { params: Promise.resolve({ id: countId }) })).status).toBe(200);
+    // The manager who ran the count can't apply it themselves.
+    const self = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: Promise.resolve({ id: countId }) });
+    expect(self.status).toBe(403);
+
+    const second = await s.prisma.user.create({
+      data: { name: "Sam Second", email: "second@test.local", passwordHash: "x", role: "MANAGER" },
+    });
+    vi.resetModules();
+    mockAuthAs({ id: second.id, role: "MANAGER" });
+    review = await import("@/app/api/truck-counts/[id]/review/route");
     const applied = await review.POST(await jsonRequest(`/api/truck-counts/${countId}/review`, "POST", { decision: "APPLY" }), { params: Promise.resolve({ id: countId }) });
     expect(applied.status).toBe(200);
     expect(await truckQty(s.capacitor.id, s.truck.id)).toBe(6);

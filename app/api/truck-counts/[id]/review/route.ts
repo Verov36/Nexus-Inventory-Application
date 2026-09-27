@@ -3,16 +3,17 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTrucksAndLimits } from "@/lib/roles";
-import { InsufficientStockError, adjustTruckStock } from "@/lib/inventory";
-import { loadCount, summarizeCount, canWorkTruck } from "@/lib/truck-counts";
+import { InsufficientStockError } from "@/lib/inventory";
+import { CountStateConflict, applyCount, canWorkTruck, loadCount, summarizeCount } from "@/lib/truck-counts";
 
 const reviewSchema = z.object({ decision: z.enum(["APPLY", "DISCARD"]) });
 
 // POST /api/truck-counts/:id/review { decision: "APPLY" | "DISCARD" }
-// APPLY posts every variance as an ADJUSTMENT on the truck (shortages come
-// off, overages go on) so the live count matches what was physically
-// found. Managers only. DISCARD is also allowed for whoever started an
-// OPEN count (a tech abandoning their own count).
+// APPLY posts the count to the truck as ADJUSTMENTs (see applyCount).
+// Managers only, SUBMITTED counts only, and not by the person who ran the
+// count — a count someone applies to their own numbers checks nothing. (The
+// super admin is exempt so a one-person shop isn't stuck.) DISCARD is also
+// allowed for whoever started an OPEN count (a tech abandoning their own).
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const params = await ctx.params;
   const session = await auth();
@@ -42,23 +43,36 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!isManager && !ownOpen) {
       return NextResponse.json({ error: "Only a manager can discard a submitted count." }, { status: 403 });
     }
-    if (count.status === "APPLIED" || count.status === "DISCARDED") {
-      return NextResponse.json({ error: `This count is already ${count.status.toLowerCase()}.` }, { status: 409 });
-    }
-    const updated = await prisma.truckCount.update({
-      where: { id: count.id },
+    // Conditional on the status the caller saw, so a discard can't land on
+    // a count that was applied a moment earlier.
+    const discarded = await prisma.truckCount.updateMany({
+      where: { id: count.id, status: isManager ? { in: ["OPEN", "SUBMITTED"] } : "OPEN" },
       data: { status: "DISCARDED", reviewedById: userId, reviewedAt: new Date() },
-      select: { id: true, status: true },
     });
-    return NextResponse.json({ count: updated });
+    if (discarded.count === 0) {
+      return NextResponse.json({ error: "This count was already applied or discarded." }, { status: 409 });
+    }
+    return NextResponse.json({ count: { id: count.id, status: "DISCARDED" } });
   }
 
   // APPLY
   if (!isManager) {
     return NextResponse.json({ error: "Only a manager or admin can apply a count." }, { status: 403 });
   }
-  if (count.status !== "SUBMITTED" && count.status !== "OPEN") {
+  if (count.status === "OPEN") {
+    return NextResponse.json(
+      { error: "This count is still in progress. Whoever is counting submits it first, then it can be applied." },
+      { status: 409 }
+    );
+  }
+  if (count.status !== "SUBMITTED") {
     return NextResponse.json({ error: `This count is already ${count.status.toLowerCase()}.` }, { status: 409 });
+  }
+  if (count.startedById === userId && role !== "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "You ran this count, so someone else has to review and apply it." },
+      { status: 403 }
+    );
   }
   const summary = summarizeCount(count.lines);
   if (summary.uncountedLines > 0) {
@@ -69,45 +83,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      let adjustments = 0;
-      for (const line of summary.lines) {
-        if (line.variance === null || line.variance === 0) continue;
-        await adjustTruckStock(tx, line.partId, count.truckId, line.variance);
-        await tx.inventoryTransaction.create({
-          data: {
-            type: "ADJUSTMENT",
-            partId: line.partId,
-            quantity: Math.abs(line.variance),
-            ...(line.variance < 0
-              ? { fromLocationType: "TRUCK", fromTruckId: count.truckId }
-              : { toLocationType: "TRUCK", toTruckId: count.truckId }),
-            performedById: userId,
-            notes: `Truck count ${count.createdAt.toISOString().slice(0, 10)}: expected ${line.expectedQty}, counted ${line.countedQty}${
-              count.notes ? ` — ${count.notes}` : ""
-            }`,
-          },
-        });
-        adjustments++;
-      }
-      const updated = await tx.truckCount.update({
-        where: { id: count.id },
-        data: { status: "APPLIED", reviewedById: userId, reviewedAt: new Date() },
-        select: { id: true, status: true, reviewedAt: true },
-      });
-      return { updated, adjustments };
+    const posted = await prisma.$transaction((tx) => applyCount(tx, count.id, userId), { timeout: 30_000 });
+    const short = posted.filter((p) => p.delta < 0).reduce((n, p) => n - p.delta, 0);
+    const over = posted.filter((p) => p.delta > 0).reduce((n, p) => n + p.delta, 0);
+    return NextResponse.json({
+      count: { id: count.id, status: "APPLIED" },
+      adjustments: posted.length,
+      unitsShort: short,
+      unitsOver: over,
+      movedDuringCount: posted.filter((p) => p.movedSince !== 0).length,
     });
-
-    return NextResponse.json({ count: result.updated, adjustments: result.adjustments, ...summary, lines: undefined });
   } catch (err) {
+    if (err instanceof CountStateConflict) {
+      return NextResponse.json({ error: "This count was already applied or discarded." }, { status: 409 });
+    }
     if (err instanceof InsufficientStockError) {
-      return NextResponse.json(
-        {
-          error:
-            "Stock on this truck changed since the count was taken (returns or write-offs), so the shortages no longer line up. Discard this count and run a fresh one.",
-        },
-        { status: 409 }
-      );
+      // Shouldn't happen — the truck row is locked and the target is computed
+      // from it — but never let a count overdraw stock.
+      return NextResponse.json({ error: "Stock changed while applying — nothing was changed. Try again." }, { status: 409 });
     }
     console.error("Applying truck count failed:", err);
     return NextResponse.json({ error: "Something went wrong applying this count — nothing was changed." }, { status: 500 });

@@ -51,6 +51,30 @@ export async function resolveWarehouseId(requested?: string | null) {
   return first?.id ?? null;
 }
 
+/**
+ * Locks one location's stock row for the rest of the transaction (SELECT …
+ * FOR UPDATE) and returns its quantity — 0 when there's no row yet. Use it
+ * when a change is computed from the current quantity ("set it to N"), so
+ * nothing else can move that stock between the read and the write.
+ */
+export async function lockStockQty(
+  tx: Prisma.TransactionClient,
+  partId: string,
+  at: { truckId: string } | { warehouseId: string }
+): Promise<number> {
+  const rows =
+    "truckId" in at
+      ? await tx.$queryRaw<{ quantity: number }[]>`
+          SELECT "quantity" FROM "StockLevel"
+          WHERE "partId" = ${partId} AND "truckId" = ${at.truckId} AND "warehouseId" IS NULL
+          FOR UPDATE`
+      : await tx.$queryRaw<{ quantity: number }[]>`
+          SELECT "quantity" FROM "StockLevel"
+          WHERE "partId" = ${partId} AND "warehouseId" = ${at.warehouseId} AND "truckId" IS NULL
+          FOR UPDATE`;
+  return rows[0]?.quantity ?? 0;
+}
+
 async function applyDelta(
   tx: Prisma.TransactionClient,
   where: { partId: string; warehouseId?: string; truckId?: string },

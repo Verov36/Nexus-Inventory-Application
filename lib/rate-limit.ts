@@ -8,7 +8,7 @@ export type RateLimitResult = { ok: boolean; retryAfterSeconds: number };
  * of app instances all see the same count.
  */
 export async function rateLimit(key: string, limit: number, windowSeconds: number): Promise<RateLimitResult> {
-  const rows = await prisma.$queryRaw<{ count: number; windowStart: Date }[]>`
+  const rows = await prisma.$queryRaw<{ count: number; retryAfter: number }[]>`
     INSERT INTO "RateLimit" ("key", "windowStart", "count")
     VALUES (${key}, timezone('utc', now()), 1)
     ON CONFLICT ("key") DO UPDATE SET
@@ -16,7 +16,11 @@ export async function rateLimit(key: string, limit: number, windowSeconds: numbe
                      THEN 1 ELSE "RateLimit"."count" + 1 END,
       "windowStart" = CASE WHEN "RateLimit"."windowStart" < timezone('utc', now()) - make_interval(secs => ${windowSeconds})
                            THEN timezone('utc', now()) ELSE "RateLimit"."windowStart" END
-    RETURNING "count", "windowStart"
+    RETURNING "count",
+      -- Worked out in the database so it's on the same clock as windowStart.
+      GREATEST(1, CEIL(EXTRACT(EPOCH FROM
+        ("windowStart" + make_interval(secs => ${windowSeconds}) - timezone('utc', now()))
+      )))::int AS "retryAfter"
   `;
   // (Times are UTC explicitly: the column has no time zone, Prisma reads it
   // as UTC, and the database server's own zone may be anything.)
@@ -24,9 +28,8 @@ export async function rateLimit(key: string, limit: number, windowSeconds: numbe
   if (Math.random() < 0.005) {
     prisma.$executeRaw`DELETE FROM "RateLimit" WHERE "windowStart" < timezone('utc', now()) - interval '1 day'`.catch(() => {});
   }
-  const { count, windowStart } = rows[0];
-  const retryAfterSeconds = Math.max(1, Math.ceil((windowStart.getTime() + windowSeconds * 1000 - Date.now()) / 1000));
-  return { ok: count <= limit, retryAfterSeconds };
+  const { count, retryAfter } = rows[0];
+  return { ok: count <= limit, retryAfterSeconds: retryAfter };
 }
 
 /** Checks several limits (e.g. per-IP and per-account); fails if any is over. */

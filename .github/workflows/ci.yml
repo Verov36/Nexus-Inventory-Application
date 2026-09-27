@@ -34,5 +34,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npx prisma migrate deploy
+      # schema.prisma and the migrations must describe the same database.
+      - run: PGPASSWORD=nexus psql -h localhost -U nexus -d nexus_test -c "CREATE DATABASE nexus_shadow"
+      - run: >-
+          npx prisma migrate diff --exit-code
+          --from-migrations prisma/migrations
+          --to-schema-datamodel prisma/schema.prisma
+          --shadow-database-url postgresql://nexus:nexus@localhost:5432/nexus_shadow
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm test
       - run: npm run build

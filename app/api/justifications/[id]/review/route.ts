@@ -41,14 +41,30 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   }
 
-  const justification = await prisma.overageJustification.update({
-    where: { id: params.id },
+  // Approving your own overage checks nothing. (Super admin exempt so a
+  // one-person shop isn't stuck.)
+  const role = (session.user as { role?: string }).role;
+  if (existing.submittedById === session.user.id && role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "You submitted this one, so another manager has to review it." }, { status: 403 });
+  }
+
+  // Conditional on still being PENDING: two managers deciding at once, the
+  // second one is told it was already decided instead of overwriting it.
+  const decided = await prisma.overageJustification.updateMany({
+    where: { id: params.id, status: "PENDING" },
     data: {
       status: parsed.data.decision,
       reviewedById: session.user.id,
       reviewedAt: new Date(),
     },
   });
+  const justification = await prisma.overageJustification.findUniqueOrThrow({ where: { id: params.id } });
+  if (decided.count === 0) {
+    return NextResponse.json(
+      { error: `This justification was already ${justification.status.toLowerCase()}.`, justification },
+      { status: 409 }
+    );
+  }
 
   return NextResponse.json({ justification });
 }

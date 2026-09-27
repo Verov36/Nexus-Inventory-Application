@@ -3,14 +3,24 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canEditParts } from "@/lib/roles";
-import { InsufficientStockError, adjustWarehouseStock, getWarehouseStock, resolveWarehouseId } from "@/lib/inventory";
+import { InsufficientStockError, adjustWarehouseStock, lockStockQty, resolveWarehouseId } from "@/lib/inventory";
 
 const adjustSchema = z.object({
   partId: z.string().min(1),
   warehouseId: z.string().optional().nullable(),
-  actualQuantity: z.number().int().min(0),
-  reason: z.string().trim().min(1),
+  actualQuantity: z.number().int().min(0).max(1_000_000),
+  // The on-hand quantity the person was looking at when they entered the
+  // count. If stock moved since, the correction is refused rather than
+  // silently computed against a number they never saw.
+  expectedQuantity: z.number().int().min(0).optional(),
+  reason: z.string().trim().min(1).max(500),
 });
+
+class StockMoved extends Error {
+  constructor(public readonly current: number) {
+    super("stock moved");
+  }
+}
 
 // POST /api/inventory/warehouse-adjust
 // Takes what was physically counted, not a +/- amount — the server works
@@ -40,7 +50,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { partId, actualQuantity, reason } = parsed.data;
+  const { partId, actualQuantity, expectedQuantity, reason } = parsed.data;
 
   const warehouseId = await resolveWarehouseId(parsed.data.warehouseId);
   if (!warehouseId) {
@@ -50,21 +60,19 @@ export async function POST(req: NextRequest) {
   const part = await prisma.part.findUnique({ where: { id: partId } });
   if (!part) return NextResponse.json({ error: "Part not found" }, { status: 404 });
 
-  const current = await getWarehouseStock(partId, warehouseId);
-  const currentQuantity = current?.quantity ?? 0;
-  const delta = actualQuantity - currentQuantity;
-
-  if (delta === 0) {
-    return NextResponse.json(
-      { unchanged: true, message: "That matches the current count — nothing to adjust." },
-      { status: 200 }
-    );
-  }
-
   try {
     const result = await prisma.$transaction(async (tx) => {
+      // The difference is worked out from the locked row, so a receipt or
+      // checkout landing at the same moment (or a double-submit) can't turn
+      // "set it to 8" into 13 or 6.
+      const currentQuantity = await lockStockQty(tx, partId, { warehouseId });
+      if (expectedQuantity !== undefined && expectedQuantity !== currentQuantity) {
+        throw new StockMoved(currentQuantity);
+      }
+      const delta = actualQuantity - currentQuantity;
+      if (delta === 0) return { delta, currentQuantity, transaction: null };
       await adjustWarehouseStock(tx, partId, warehouseId, delta);
-      return tx.inventoryTransaction.create({
+      const transaction = await tx.inventoryTransaction.create({
         data: {
           type: "ADJUSTMENT",
           partId,
@@ -77,13 +85,34 @@ export async function POST(req: NextRequest) {
           notes: reason,
         },
       });
+      return { delta, currentQuantity, transaction };
     });
 
+    if (result.delta === 0) {
+      return NextResponse.json(
+        { unchanged: true, message: "That matches the current count — nothing to adjust." },
+        { status: 200 }
+      );
+    }
     return NextResponse.json(
-      { transaction: result, previousQuantity: currentQuantity, newQuantity: actualQuantity, delta },
+      {
+        transaction: result.transaction,
+        previousQuantity: result.currentQuantity,
+        newQuantity: actualQuantity,
+        delta: result.delta,
+      },
       { status: 201 }
     );
   } catch (err) {
+    if (err instanceof StockMoved) {
+      return NextResponse.json(
+        {
+          error: `Stock on hand changed to ${err.current} while you were counting. Check the shelf against the new number and enter the count again.`,
+          currentQuantity: err.current,
+        },
+        { status: 409 }
+      );
+    }
     if (err instanceof InsufficientStockError) {
       return NextResponse.json(
         { error: "The count changed while you were entering this — refresh and try again." },

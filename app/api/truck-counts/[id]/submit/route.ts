@@ -36,10 +36,14 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
-  const updated = await prisma.truckCount.update({
-    where: { id: count.id },
-    data: { status: "SUBMITTED", submittedAt: new Date() },
-    select: { id: true, status: true, submittedAt: true },
+  const submittedAt = new Date();
+  const claimed = await prisma.truckCount.updateMany({
+    where: { id: count.id, status: "OPEN" },
+    data: { status: "SUBMITTED", submittedAt },
   });
-  return NextResponse.json({ count: updated, ...summary, lines: undefined });
+  if (claimed.count === 0) {
+    return NextResponse.json({ error: "This count was already submitted or closed." }, { status: 409 });
+  }
+  // The tech learns the totals once it's submitted, not before (blind count).
+  return NextResponse.json({ count: { id: count.id, status: "SUBMITTED", submittedAt }, ...summary, lines: undefined });
 }
