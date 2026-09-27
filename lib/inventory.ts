@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
 
 /**
  * Thrown from inside a stock-adjusting transaction when a removal would take
@@ -143,10 +144,20 @@ export async function getApplicableLimit(truckId: string, partId: string, catego
   return null;
 }
 
+/**
+ * The job with this number, created if it's new. An atomic insert-or-nothing
+ * rather than Prisma's upsert (read, then insert): two techs recording parts
+ * against the same brand-new job number at the same moment would otherwise
+ * both try to insert it, and the second would fail with a unique violation.
+ */
 export async function findOrCreateJob(tx: Prisma.TransactionClient, jobNumber: string) {
-  return tx.job.upsert({
-    where: { jobNumber },
-    update: {},
-    create: { jobNumber },
-  });
+  await tx.$executeRaw`
+    INSERT INTO "Job" ("id", "jobNumber", "status", "createdAt")
+    VALUES (${createId()}, ${jobNumber}, 'open', timezone('utc', now()))
+    ON CONFLICT ("jobNumber") DO NOTHING`;
+  return tx.job.findUniqueOrThrow({ where: { jobNumber } });
+}
+
+function createId() {
+  return `job_${randomUUID().replace(/-/g, "")}`;
 }

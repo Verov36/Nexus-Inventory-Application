@@ -22,10 +22,13 @@ enum TransactionType {
   RETURN           // part comes back (unused / job overage)
   TRANSFER         // moves between two locations (e.g. truck to truck)
   ADJUSTMENT        // manager correction / cycle count
+  CONSUME          // installed / used on a job: leaves a truck, goes to the customer
 }
 
+// Why stock was loaded onto a truck. Loading is not using: parts only leave
+// inventory when a CONSUME records them as used on a job.
 enum CheckoutType {
-  JOB_USE   // tied to a specific job / work order
+  JOB_USE   // loaded for a specific job / work order
   RESTOCK   // general truck replenishment, no job required
 }
 
@@ -299,4 +302,21 @@ model RateLimit {
   count       Int
 
   @@index([windowStart])
+}
+
+// Replay protection for writes that clients may retry (the Field App's
+// "parts used" calls, a scanner double-tap, a timeout followed by a retry).
+// The first request with a key does the work and stores its response; any
+// later request with the same key gets that stored response back and moves
+// no stock.
+model IdempotencyRecord {
+  // Who sent it (user id or API client), so keys from different callers never collide.
+  scope      String
+  key        String
+  status     Int
+  body       Json
+  createdAt  DateTime @default(now())
+
+  @@id([scope, key])
+  @@index([createdAt])
 }

@@ -21,6 +21,7 @@ import {
   X,
   LogOut,
   type LucideIcon,
+  Wrench,
 } from "lucide-react";
 import {
   ROLE_LABELS,
@@ -62,6 +63,12 @@ const NAV_ITEMS: NavItem[] = [
     visible: (role, canReceiveParts) => canEditParts(role) || canReceiveWarehouseStock(role, canReceiveParts),
   },
   { href: "/truck/checkout", label: "Truck checkout", icon: Truck, visible: (role) => canCheckoutToTruck(role) },
+  {
+    href: "/truck/use",
+    label: "Parts used on job",
+    icon: Wrench,
+    visible: (role) => canCheckoutToTruck(role) || canManageTrucksAndLimits(role),
+  },
   { href: "/truck/inventory", label: "Truck inventory", icon: ClipboardList, visible: (role) => canViewFleet(role) },
   {
     href: "/truck/count",

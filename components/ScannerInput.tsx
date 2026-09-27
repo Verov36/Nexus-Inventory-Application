@@ -91,7 +91,8 @@ export default function ScannerInput({ onScan, placeholder }: ScannerInputProps)
           value={manualValue}
           onChange={(e) => setManualValue(e.target.value)}
           placeholder={placeholder ?? "Scan or type a part barcode"}
-          className="tap-target flex-1 rounded-lg border-2 border-nexus-steel/30 bg-white px-4 text-lg focus:border-nexus-amber focus:outline-none"
+          aria-label={placeholder ?? "Scan or type a part barcode"}
+          className="tap-target min-w-0 flex-1 rounded-lg border-2 border-nexus-steel/30 bg-white px-4 text-lg focus:border-nexus-amber focus:outline-none"
           autoComplete="off"
           autoCapitalize="off"
           autoCorrect="off"
@@ -101,9 +102,10 @@ export default function ScannerInput({ onScan, placeholder }: ScannerInputProps)
         <button
           type="button"
           onClick={() => setCameraOpen((v) => !v)}
-          className="tap-target rounded-lg bg-nexus-navy px-4 text-white"
+          aria-pressed={cameraOpen}
+          className="tap-target shrink-0 whitespace-nowrap rounded-lg bg-nexus-navy px-4 text-white"
         >
-          {cameraOpen ? "Close camera" : "Use camera"}
+          {cameraOpen ? "Close" : "Camera"}
         </button>
       </form>
 

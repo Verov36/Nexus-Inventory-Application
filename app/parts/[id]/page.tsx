@@ -354,7 +354,8 @@ export default function PartDetailPage() {
               <div>
                 <p className="font-medium text-nexus-navy">
                   {t.type === "RECEIVE" && "Received"}
-                  {t.type === "CHECKOUT" && (t.checkoutType === "RESTOCK" ? "Truck restock" : "Job checkout")}
+                  {t.type === "CHECKOUT" && (t.checkoutType === "RESTOCK" ? "Truck restock" : "Loaded for job")}
+                  {t.type === "CONSUME" && "Used on job"}
                   {t.type === "RETURN" && "Returned to warehouse"}
                   {t.type === "ADJUSTMENT" &&
                     (t.toWarehouseId || t.fromWarehouseId

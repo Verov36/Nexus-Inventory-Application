@@ -289,7 +289,7 @@ export default function TruckCheckoutPage() {
             checkoutType === "JOB_USE" ? "bg-nexus-navy text-white" : "border-2 border-nexus-line bg-white text-nexus-navy"
           }`}
         >
-          <Wrench size={16} /> For a job
+          <Wrench size={16} /> Load for a job
         </button>
         <button
           onClick={() => setCheckoutType("RESTOCK")}

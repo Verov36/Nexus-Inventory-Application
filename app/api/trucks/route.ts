@@ -39,7 +39,7 @@ export async function GET() {
   // the job bucket if there's more removed than was ever restocked — that
   // guarantees job + restock always equals the truck's real current total.
   const truckIds = trucks.map((t) => t.id);
-  const [checkoutRows, removalRows] = await Promise.all([
+  const [checkoutRows, removalRows, usedRows] = await Promise.all([
     prisma.inventoryTransaction.groupBy({
       by: ["toTruckId", "partId", "checkoutType"],
       where: { type: "CHECKOUT", toTruckId: { in: truckIds } },
@@ -50,6 +50,11 @@ export async function GET() {
       where: { type: { in: ["RETURN", "ADJUSTMENT"] }, fromTruckId: { in: truckIds } },
       _sum: { quantity: true },
     }),
+    prisma.inventoryTransaction.groupBy({
+      by: ["fromTruckId", "partId"],
+      where: { type: "CONSUME", fromTruckId: { in: truckIds } },
+      _sum: { quantity: true },
+    }),
   ]);
 
   const breakdownMap = new Map<string, { job: number; restock: number }>();
@@ -58,6 +63,18 @@ export async function GET() {
     const entry = breakdownMap.get(key) ?? { job: 0, restock: 0 };
     if (row.checkoutType === "JOB_USE") entry.job += row._sum.quantity ?? 0;
     if (row.checkoutType === "RESTOCK") entry.restock += row._sum.quantity ?? 0;
+    breakdownMap.set(key, entry);
+  }
+  // Parts used on jobs come off the job-loaded bucket first (that's what it
+  // was loaded for), then out of general restock.
+  for (const row of usedRows) {
+    const key = `${row.fromTruckId}|${row.partId}`;
+    const entry = breakdownMap.get(key) ?? { job: 0, restock: 0 };
+    let usedQty = row._sum.quantity ?? 0;
+    const fromJob = Math.min(entry.job, usedQty);
+    entry.job -= fromJob;
+    usedQty -= fromJob;
+    entry.restock = Math.max(0, entry.restock - usedQty);
     breakdownMap.set(key, entry);
   }
   for (const row of removalRows) {

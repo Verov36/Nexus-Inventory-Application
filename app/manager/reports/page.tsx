@@ -13,8 +13,27 @@ type Summary = {
   jobUseCost?: number;
   restockCost?: number;
   uncostedLines?: number;
-  byTech: { tech: string; partsCheckedOut: number; jobUseCount: number; restockCount: number; cost?: number }[];
-  byPart: { sku: string; part: string; quantity: number; unitCost?: number | null; cost?: number }[];
+  usedLines?: number;
+  usedUnits?: number;
+  usedCost?: number;
+  byTech: {
+    tech: string;
+    partsCheckedOut: number;
+    jobUseCount: number;
+    restockCount: number;
+    cost?: number;
+    partsUsed?: number;
+    usedCost?: number;
+  }[];
+  byPart: {
+    sku: string;
+    part: string;
+    quantity: number;
+    unitCost?: number | null;
+    cost?: number;
+    usedQuantity?: number;
+    usedCost?: number;
+  }[];
   byJob: {
     jobNumber: string;
     customer?: string | null;
@@ -206,6 +225,13 @@ export default function ReportsPage() {
 
       {summary && (
         <div className="mt-6 flex flex-col gap-6">
+          {summary.usedCost !== undefined && (
+            <div className="grid grid-cols-2 gap-3">
+              <Stat label="Parts used on jobs" value={summary.usedUnits ?? 0} />
+              <Stat label="Parts cost on jobs" value={formatMoney(summary.usedCost)} />
+            </div>
+          )}
+          <h2 className="-mb-3 text-sm font-medium text-nexus-steel">Loaded onto trucks (stock moved, not yet used)</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Checkouts" value={summary.totalCheckouts} />
             <Stat label="Job use" value={summary.jobUseCount} />
@@ -215,8 +241,8 @@ export default function ReportsPage() {
           {summary.totalCost !== undefined && (
             <div>
               <div className="grid grid-cols-3 gap-3">
-                <Stat label="Parts cost" value={formatMoney(summary.totalCost)} />
-                <Stat label="On jobs" value={formatMoney(summary.jobUseCost ?? 0)} />
+                <Stat label="Value loaded" value={formatMoney(summary.totalCost)} />
+                <Stat label="Loaded for jobs" value={formatMoney(summary.jobUseCost ?? 0)} />
                 <Stat label="Restock" value={formatMoney(summary.restockCost ?? 0)} />
               </div>
               {(summary.uncostedLines ?? 0) > 0 && (
@@ -235,8 +261,15 @@ export default function ReportsPage() {
                 <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
                   <span>{t.tech}</span>
                   <span className="text-right">
-                    {t.partsCheckedOut} parts ({t.jobUseCount} job, {t.restockCount} restock)
-                    {t.cost !== undefined && <span className="ml-2 font-data text-nexus-navy">{formatMoney(t.cost)}</span>}
+                    {t.partsUsed !== undefined && (
+                      <>
+                        {t.partsUsed} used
+                        {t.usedCost !== undefined && <span className="ml-1 font-data text-nexus-navy">{formatMoney(t.usedCost)}</span>}
+                        {" · "}
+                      </>
+                    )}
+                    {t.partsCheckedOut} loaded ({t.jobUseCount} job, {t.restockCount} restock)
+                    {t.cost !== undefined && <span className="ml-2 font-data text-nexus-steel">{formatMoney(t.cost)}</span>}
                   </span>
                 </li>
               ))}
@@ -252,7 +285,8 @@ export default function ReportsPage() {
                     {p.part} <span className="font-data text-xs text-nexus-steel">({p.sku})</span>
                   </span>
                   <span className="text-right">
-                    {p.quantity}
+                    {p.usedQuantity !== undefined && <>{p.usedQuantity} used · </>}
+                    {p.quantity} loaded
                     {p.cost !== undefined && (
                       <span className="ml-2 font-data text-nexus-navy">
                         {p.unitCost === null ? "no cost" : formatMoney(p.cost)}
@@ -265,7 +299,7 @@ export default function ReportsPage() {
           </section>
 
           <section>
-            <h2 className="text-sm font-medium text-nexus-steel">By job</h2>
+            <h2 className="text-sm font-medium text-nexus-steel">By job — parts used</h2>
             <ul className="mt-2 divide-y divide-nexus-steel/10 rounded-xl border-2 border-nexus-steel/15 bg-white">
               {summary.byJob.map((j, i) => (
                 <li key={i} className="px-4 py-2 text-sm">

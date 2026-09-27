@@ -53,13 +53,14 @@ export async function GET(req: NextRequest) {
 function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
   const header = [
     "Date",
+    "Movement",
     "Tech",
     "SKU",
     "Part",
     "Quantity",
     "Unit cost",
     "Line cost",
-    "Checkout type",
+    "Load type",
     "Job number",
     "Flagged overage",
   ];
@@ -67,6 +68,7 @@ function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
     const unitCost = r.part?.unitCost === null || r.part?.unitCost === undefined ? null : toNumber(r.part.unitCost);
     return [
       new Date(r.createdAt).toISOString(),
+      r.type === "CONSUME" ? "Used on job" : "Loaded onto truck",
       r.performedBy?.name ?? "",
       r.part?.sku ?? "",
       r.part?.name ?? "",
