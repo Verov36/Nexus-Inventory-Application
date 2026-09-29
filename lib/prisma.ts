@@ -19,6 +19,8 @@ const ORG_MODELS = new Set<string>([
   "OverageJustification",
   "ReportSchedule",
   "ReportSnapshot",
+  "ApiKey",
+  "TruckCrew",
 ]);
 
 type Args = Record<string, unknown> & { where?: object; data?: unknown; create?: object };

@@ -48,7 +48,7 @@ async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const target = await prisma.user.findUnique({ where: { id: params.id } });
-  if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!target || target.isServiceAccount) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   // Editing basic profile fields (name/email/password) on an Admin or Super
   // Admin account is also restricted to a super admin, same as role changes —
@@ -190,7 +190,7 @@ async function handleDELETE(_req: NextRequest, ctx: { params: Promise<{ id: stri
   }
 
   const target = await prisma.user.findUnique({ where: { id: params.id } });
-  if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!target || target.isServiceAccount) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   if ((target.role === "SUPER_ADMIN" || target.role === "ADMIN") && actingRole !== "SUPER_ADMIN") {
     return NextResponse.json(

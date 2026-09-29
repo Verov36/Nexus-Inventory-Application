@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 
 // Pages and endpoints reachable without a session.
 const PUBLIC_PAGES = ["/login", "/setup", "/forgot-password", "/reset-password"];
-const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/setup", "/api/cron/", "/api/health"];
+// /api/v1 authenticates each call with an API key (lib/api.ts), not a session.
+const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/setup", "/api/cron/", "/api/health", "/api/v1/"];
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;

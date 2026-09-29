@@ -158,7 +158,13 @@ export async function findOrCreateJob(tx: Tx, jobNumber: string, externalId?: st
   await tx.$executeRaw`
     INSERT INTO "Job" ("id", "organizationId", "jobNumber", "externalId", "status", "createdAt")
     VALUES (${createId()}, ${organizationId}, ${jobNumber}, ${externalId ?? null}, 'open', timezone('utc', now()))
-    ON CONFLICT ("organizationId", "jobNumber") DO NOTHING`;
+    ON CONFLICT DO NOTHING`;
+  if (externalId) {
+    const linked = await tx.job.findFirst({ where: { externalId } });
+    if (linked) return linked;
+    // The number already existed without a Field App id: claim it.
+    await tx.job.updateMany({ where: { jobNumber, externalId: null }, data: { externalId } });
+  }
   return tx.job.findFirstOrThrow({ where: { jobNumber } });
 }
 

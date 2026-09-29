@@ -5,6 +5,7 @@ import { Building2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ApiKeysPanel } from "@/components/ApiKeysPanel";
 
 type Organization = {
   id: string;
@@ -153,6 +154,7 @@ export default function OrganizationSettingsPage() {
               </li>
             ))}
           </ul>
+          <ApiKeysPanel />
           {org.externalId && (
             <p className="mt-2 text-xs text-nexus-steel">
               This company is connected to the Field App; branches are managed there.

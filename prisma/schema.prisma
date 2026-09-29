@@ -23,6 +23,7 @@ enum TransactionType {
   TRANSFER // moves between two locations (e.g. truck to truck)
   ADJUSTMENT // manager correction / cycle count
   CONSUME // installed / used on a job: leaves a truck, goes to the customer
+  CONSUME_REVERSAL // a CONSUME undone (wrong part / not installed): back onto the truck
 }
 
 // Why stock was loaded onto a truck. Loading is not using: parts only leave
@@ -77,13 +78,15 @@ model Organization {
   justifications  OverageJustification[]
   reportSchedule  ReportSchedule?
   reportSnapshots ReportSnapshot[]
+  apiKeys         ApiKey[]
+  truckCrew       TruckCrew[]
 }
 
 // A location of a company (the Field App's Branch). Warehouses and trucks
 // belong to one.
 model Branch {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
   name           String
   externalId     String?
@@ -99,26 +102,30 @@ model Branch {
 }
 
 model User {
-  id              String       @id @default(cuid())
-  organizationId  String @default(dbgenerated("current_setting('app.organization_id'::text)"))
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  name            String
-  email           String       @unique
-  passwordHash    String
-  role            Role
+  id               String       @id @default(cuid())
+  organizationId   String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  name             String
+  email            String       @unique
+  passwordHash     String
+  role             Role
   // Independent of role — the warehouse manager designates up to two people
   // (besides the super admin, who always has access) allowed to receive
   // parts. Toggled in /admin/users, capped and enforced server-side.
-  canReceiveParts Boolean      @default(false)
+  canReceiveParts  Boolean      @default(false)
   // Set when an admin deactivates the account. A deactivated user can't sign
   // in and any session they already hold stops working on its next request.
   // Accounts with history are deactivated, never deleted.
-  disabledAt      DateTime?
+  disabledAt       DateTime?
   // Stamped into the session token at sign-in. Bumping it (password change,
   // reset, deactivation) invalidates every session issued before the bump.
-  sessionVersion  Int          @default(0)
-  truck           Truck?       @relation("TruckTech")
-  createdAt       DateTime     @default(now())
+  sessionVersion   Int          @default(0)
+  // The organization's integration identity (e.g. "Field App"). Can never
+  // sign in; API calls are recorded under it, with the real person in
+  // InventoryTransaction.performedByName.
+  isServiceAccount Boolean      @default(false)
+  truck            Truck?       @relation("TruckTech")
+  createdAt        DateTime     @default(now())
 
   transactions           InventoryTransaction[] @relation("PerformedBy")
   justifications         OverageJustification[] @relation("SubmittedBy")
@@ -144,7 +151,7 @@ model PasswordResetToken {
 
 model Part {
   id                 String       @id @default(cuid())
-  organizationId     String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId     String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization       Organization @relation(fields: [organizationId], references: [id])
   sku                String
   name               String
@@ -179,7 +186,7 @@ model Part {
 
 model Warehouse {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
   branchId       String
   branch         Branch       @relation(fields: [branchId], references: [id])
@@ -193,11 +200,13 @@ model Warehouse {
 
 model Truck {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
   branchId       String
   branch         Branch       @relation(fields: [branchId], references: [id])
   label          String // e.g. "Truck 4" / license plate
+  // The Field App's Truck.id when imported from there.
+  externalId     String?
   techId         String?      @unique
   tech           User?        @relation("TruckTech", fields: [techId], references: [id])
   active         Boolean      @default(true)
@@ -207,7 +216,9 @@ model Truck {
   stockLimits    TruckStockLimit[]
   justifications OverageJustification[]
   counts         TruckCount[]
+  crew           TruckCrew[]
 
+  @@unique([organizationId, externalId])
   @@index([organizationId])
 }
 
@@ -217,7 +228,7 @@ model Truck {
 // discards the count.
 model TruckCount {
   id             String           @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String           @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization     @relation(fields: [organizationId], references: [id])
   truckId        String
   truck          Truck            @relation(fields: [truckId], references: [id])
@@ -258,7 +269,7 @@ model TruckCountLine {
 // Current on-hand quantity for a part at a given location (warehouse or truck)
 model StockLevel {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
   partId         String
   part           Part         @relation(fields: [partId], references: [id])
@@ -278,7 +289,7 @@ model StockLevel {
 // Manager-defined cap for how much of a part (or category) may sit on a given truck
 model TruckStockLimit {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
   truckId        String
   truck          Truck        @relation(fields: [truckId], references: [id])
@@ -294,7 +305,7 @@ model TruckStockLimit {
 
 model Job {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
   // The Field App's Job.id when the job came from there.
   externalId     String?
@@ -311,24 +322,36 @@ model Job {
 
 // Every movement of parts is recorded here — the immutable audit trail
 model InventoryTransaction {
-  id               String          @id @default(cuid())
-  organizationId   String @default(dbgenerated("current_setting('app.organization_id'::text)"))
-  organization     Organization    @relation(fields: [organizationId], references: [id])
-  type             TransactionType
-  checkoutType     CheckoutType? // set only when type = CHECKOUT
-  partId           String
-  part             Part            @relation(fields: [partId], references: [id])
-  quantity         Int
-  fromLocationType LocationType?
-  fromWarehouseId  String?
-  fromTruckId      String?
-  toLocationType   LocationType?
-  toWarehouseId    String?
-  toTruckId        String?
-  performedById    String
-  performedBy      User            @relation("PerformedBy", fields: [performedById], references: [id])
-  notes            String? // reason for a RETURN or ADJUSTMENT — why stock left the truck
-  createdAt        DateTime        @default(now())
+  id                    String                 @id @default(cuid())
+  organizationId        String                 @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organization          Organization           @relation(fields: [organizationId], references: [id])
+  type                  TransactionType
+  checkoutType          CheckoutType? // set only when type = CHECKOUT
+  partId                String
+  part                  Part                   @relation(fields: [partId], references: [id])
+  quantity              Int
+  fromLocationType      LocationType?
+  fromWarehouseId       String?
+  fromTruckId           String?
+  toLocationType        LocationType?
+  toWarehouseId         String?
+  toTruckId             String?
+  performedById         String
+  performedBy           User                   @relation("PerformedBy", fields: [performedById], references: [id])
+  notes                 String? // reason for a RETURN or ADJUSTMENT — why stock left the truck
+  // Cost and selling price per unit, frozen when a part is used on a job so
+  // later price changes never rewrite what a job cost or was billed.
+  unitCost              Decimal?               @db.Decimal(10, 2)
+  unitPrice             Decimal?               @db.Decimal(10, 2)
+  // Who actually did it when the call came through the API (a Field App
+  // user); performedBy is then the organization's service account.
+  performedByExternalId String?
+  performedByName       String?
+  // A CONSUME_REVERSAL points at the CONSUME it undoes.
+  reversesId            String?
+  reverses              InventoryTransaction?  @relation("Reversal", fields: [reversesId], references: [id], onDelete: Restrict)
+  reversals             InventoryTransaction[] @relation("Reversal")
+  createdAt             DateTime               @default(now())
 
   partUsage     PartUsage?
   justification OverageJustification?
@@ -340,6 +363,7 @@ model InventoryTransaction {
   @@index([partId, createdAt])
   @@index([toTruckId, partId])
   @@index([fromTruckId, partId])
+  @@index([reversesId])
 }
 
 // Links a JOB_USE checkout transaction to the job it was consumed on
@@ -356,7 +380,7 @@ model PartUsage {
 // push (or keep) the truck over its manager-set stock limit
 model OverageJustification {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   transactionId     String?               @unique
@@ -393,7 +417,7 @@ model ReportSchedule {
 // without re-querying transactions each time.
 model ReportSnapshot {
   id             String       @id @default(cuid())
-  organizationId String @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   rangeFrom   DateTime
@@ -430,4 +454,40 @@ model IdempotencyRecord {
 
   @@id([scope, key])
   @@index([createdAt])
+}
+
+// Field App users who ride a truck (set by the Field App through the API).
+// Separate from Truck.techId, which is an Inventory app login.
+model TruckCrew {
+  id             String       @id @default(cuid())
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  truckId        String
+  truck          Truck        @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  externalUserId String
+  name           String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([truckId, externalUserId])
+  @@index([organizationId, externalUserId])
+}
+
+// Keys other systems (the Field App) use to call /api/v1 for one
+// organization. Only a SHA-256 of the key is stored; the key itself is shown
+// once when it's created. Rotating sets expiresAt on the old key so both work
+// during the changeover.
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String       @default(dbgenerated("current_setting('app.organization_id'::text)"))
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  // First characters of the key, to tell keys apart in the UI.
+  prefix         String
+  hash           String       @unique
+  createdAt      DateTime     @default(now())
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+
+  @@index([organizationId])
 }

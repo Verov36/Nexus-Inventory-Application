@@ -1,9 +1,9 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { runUnscoped } from "@/lib/tenant";
-import { appBaseUrl, canSendLinks, sendEmail } from "@/lib/email";
+import { canSendLinks, sendEmail } from "@/lib/email";
+import { createPasswordLink, escapeHtml } from "@/lib/password-reset";
 import { clientIp, rateLimitAll, tooManyRequests } from "@/lib/rate-limit";
 
 const schema = z.object({ email: z.string().trim().toLowerCase().email() });
@@ -43,17 +43,7 @@ export async function POST(req: NextRequest) {
     prisma.user.findFirst({ where: { email: { equals: parsed.data.email, mode: "insensitive" } } })
   );
   if (user && !user.disabledAt) {
-    const token = randomBytes(32).toString("hex");
-    const tokenHash = createHash("sha256").update(token).digest("hex");
-    await prisma.$transaction([
-      // One live link per account.
-      prisma.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } }),
-      prisma.passwordResetToken.create({
-        data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + TOKEN_TTL_MINUTES * 60 * 1000) },
-      }),
-    ]);
-
-    const link = `${appBaseUrl()}/reset-password?token=${token}`;
+    const link = await createPasswordLink(user.id, TOKEN_TTL_MINUTES);
     // Sent after the response: waiting on the mail provider only for real
     // accounts would let response time (or a send failure) reveal which
     // emails exist.
@@ -71,6 +61,4 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, emailConfigured: true });
 }
 
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-}
+

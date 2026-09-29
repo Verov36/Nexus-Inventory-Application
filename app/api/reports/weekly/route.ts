@@ -66,18 +66,20 @@ function toCsv(rows: Awaited<ReturnType<typeof getTransactionRows>>) {
     "Flagged overage",
   ];
   const lines = rows.map((r) => {
-    const unitCost = r.part?.unitCost === null || r.part?.unitCost === undefined ? null : toNumber(r.part.unitCost);
+    const raw = r.unitCost ?? r.part?.unitCost;
+    const unitCost = raw === null || raw === undefined ? null : toNumber(raw);
+    const quantity = r.type === "CONSUME_REVERSAL" ? -r.quantity : r.quantity;
     return [
       new Date(r.createdAt).toISOString(),
-      r.type === "CONSUME" ? "Used on job" : "Loaded onto truck",
-      r.performedBy?.name ?? "",
+      r.type === "CONSUME" ? "Used on job" : r.type === "CONSUME_REVERSAL" ? "Put back from job" : "Loaded onto truck",
+      r.performedByName ?? r.performedBy?.name ?? "",
       r.part?.sku ?? "",
       r.part?.name ?? "",
-      r.quantity,
+      quantity,
       unitCost === null ? "" : unitCost.toFixed(2),
-      unitCost === null ? "" : money(r.quantity * unitCost).toFixed(2),
+      unitCost === null ? "" : money(quantity * unitCost).toFixed(2),
       r.checkoutType ?? "",
-      r.partUsage?.job?.jobNumber ?? "",
+      r.partUsage?.job?.jobNumber ?? r.reverses?.partUsage?.job?.jobNumber ?? "",
       r.justification ? r.justification.status : "",
     ]
       .map(csvCell)

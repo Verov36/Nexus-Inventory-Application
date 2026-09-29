@@ -10,7 +10,7 @@ async function handleGET() {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
   const techs = await prisma.user.findMany({
-    where: { role: "TRUCK_TECH" },
+    where: { isServiceAccount: false, role: "TRUCK_TECH" },
     select: { id: true, name: true, truck: { select: { id: true, label: true } } },
     orderBy: { name: "asc" },
   });

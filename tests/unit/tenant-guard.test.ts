@@ -30,18 +30,26 @@ const PUBLIC_ROUTES = new Set([
 describe("organization isolation guards", () => {
   const routes = walk(path.join(ROOT, "app/api")).filter((f) => f.endsWith("route.ts"));
 
-  it("every signed-in API route is exported through withOrg", () => {
+  it("every API route runs inside an organization: withOrg (session) or withApiKey/withPlatformKey (/api/v1)", () => {
     const offenders: string[] = [];
     for (const file of routes) {
       const name = rel(file);
       if (PUBLIC_ROUTES.has(name)) continue;
+      const allowed = name.startsWith("app/api/v1/") ? ["withApiKey", "withPlatformKey"] : ["withOrg"];
       const src = fs.readFileSync(file, "utf8");
       if (/export\s+(async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b/.test(src)) offenders.push(name);
       for (const m of src.matchAll(/export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=\s*(\w+)\(/g)) {
-        if (m[2] !== "withOrg") offenders.push(`${name} (${m[1]})`);
+        if (!allowed.includes(m[2])) offenders.push(`${name} (${m[1]})`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("only the provisioning route uses the platform key", () => {
+    const users = routes
+      .filter((f) => fs.readFileSync(f, "utf8").includes("withPlatformKey("))
+      .map(rel);
+    expect(users).toEqual(["app/api/v1/provision/orgs/[externalOrgId]/route.ts"]);
   });
 
   it("app code never uses the unscoped database client", () => {

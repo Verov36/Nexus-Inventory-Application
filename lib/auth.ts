@@ -50,7 +50,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })
         );
         const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
-        if (!user || !valid || user.disabledAt) return null;
+        if (!user || !valid || user.disabledAt || user.isServiceAccount) return null;
 
         return {
           id: user.id,
